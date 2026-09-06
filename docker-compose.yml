@@ -17,9 +17,7 @@ services:
 
   # 2. Umbrella OS Backend API & Input Coordinator
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: cryptoice1/umbrella-os-backend:latest
     container_name: umbrella-backend
     environment:
       - PORT=4000
@@ -36,9 +34,7 @@ services:
 
   # 3. Umbrella OS TV Web Portal Frontend
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: cryptoice1/umbrella-os-frontend:latest
     container_name: umbrella-frontend
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:4000/api
