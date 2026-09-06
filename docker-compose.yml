@@ -1,0 +1,54 @@
+services:
+  # 1. Android Emulator Container with Web Streaming & ADB
+  android:
+    image: budtmo/docker-android:emulator_14.0
+    container_name: umbrella-android
+    privileged: true
+    environment:
+      - DEVICE=Samsung Galaxy S10
+      - EMULATOR_ADDITIONAL_ARGS=-gpu swiftshader_indirect
+    ports:
+      - "5554:5554"  # Android Console
+      - "5555:5555"  # ADB port
+      - "6080:6080"  # Web Stream / noVNC port
+    volumes:
+      - android-data:/root
+    restart: unless-stopped
+
+  # 2. Umbrella OS Backend API & Input Coordinator
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: umbrella-backend
+    environment:
+      - PORT=4000
+      - ANDROID_HOST=android
+      - ANDROID_ADB_PORT=5555
+      - STREAM_URL=http://localhost:6080
+    ports:
+      - "4000:4000"
+    depends_on:
+      - android
+    volumes:
+      - ./backend/uploads:/app/uploads
+    restart: unless-stopped
+
+  # 3. Umbrella OS TV Web Portal Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: umbrella-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:4000/api
+      - NEXT_PUBLIC_WS_URL=ws://localhost:4000/ws
+      - NEXT_PUBLIC_STREAM_URL=http://localhost:6080
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  android-data:
