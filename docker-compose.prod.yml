@@ -1,0 +1,45 @@
+# Production overlay for one EC2 (or any VPS).
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# TV / phone browser: http://<EC2_PUBLIC_IP>/
+
+services:
+  android:
+    # Only publish on loopback; Caddy is the public entrypoint
+    ports:
+      - "127.0.0.1:5554:5554"
+      - "127.0.0.1:5555:5555"
+      - "127.0.0.1:6080:6080"
+
+  backend:
+    ports:
+      - "127.0.0.1:4000:4000"
+    environment:
+      STREAM_URL: /novnc/
+      PUBLIC_STREAM_URL: /novnc/
+
+  frontend:
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  caddy:
+    image: caddy:2
+    container_name: umbrella-caddy
+    depends_on:
+      - frontend
+      - backend
+      - android
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:
