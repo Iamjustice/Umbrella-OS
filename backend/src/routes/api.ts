@@ -36,9 +36,11 @@ const upload = multer({
 // 1. Status route & Container Health Check
 router.get('/status', async (req, res) => {
   const connected = await AdbService.connect();
+  const bootCompleted = connected ? await AdbService.isBootCompleted() : false;
   res.json({
     status: 'online',
     adbConnected: connected,
+    bootCompleted,
     streamUrl: process.env.STREAM_URL || process.env.PUBLIC_STREAM_URL || 'http://localhost:6080',
     timestamp: new Date().toISOString(),
   });
@@ -172,13 +174,24 @@ router.post('/launch', async (req, res) => {
     return res.status(404).json({ error: 'APK file not found on server' });
   }
 
+  const streamUrl =
+    process.env.STREAM_URL || process.env.PUBLIC_STREAM_URL || 'http://localhost:6080';
+
   console.log(`[Umbrella OS] Installing and launching APK: ${filename}`);
   const installResult = await AdbService.installApk(apkPath);
 
+  if (!installResult.success) {
+    return res.status(503).json({
+      error: installResult.message,
+      success: false,
+      streamUrl,
+    });
+  }
+
   res.json({
-    message: `APK installation initiated: ${installResult.message}`,
-    success: installResult.success,
-    streamUrl: process.env.STREAM_URL || process.env.PUBLIC_STREAM_URL || 'http://localhost:6080',
+    message: `APK installed: ${installResult.message}`,
+    success: true,
+    streamUrl,
   });
 });
 
@@ -216,13 +229,24 @@ router.post('/launch-package', async (req, res) => {
     return res.status(400).json({ error: 'Package name required to launch' });
   }
 
+  const streamUrl =
+    process.env.STREAM_URL || process.env.PUBLIC_STREAM_URL || 'http://localhost:6080';
+
   console.log(`[Umbrella OS] Launching package: ${packageName}`);
   const launchResult = await AdbService.launchPackage(packageName);
 
+  if (!launchResult.success) {
+    return res.status(503).json({
+      error: launchResult.message,
+      success: false,
+      streamUrl,
+    });
+  }
+
   res.json({
-    message: `Package launch initiated: ${launchResult.message}`,
-    success: launchResult.success,
-    streamUrl: process.env.STREAM_URL || process.env.PUBLIC_STREAM_URL || 'http://localhost:6080',
+    message: `Package launched: ${launchResult.message}`,
+    success: true,
+    streamUrl,
   });
 });
 

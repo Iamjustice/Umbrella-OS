@@ -94,6 +94,27 @@ export default function Home() {
       wsRef.current.send(JSON.stringify({ type: 'touch', x, y }));
     }
   }, []);
+
+  const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 130000) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(input, { ...init, signal: controller.signal });
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new Error('Request timed out. The emulator may still be booting — wait and retry.');
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  const openStream = (url?: string | null) => {
+    setStreamUrl(url || getDefaultStreamUrl());
+    setIsFullScreen(true);
+  };
+
   const [voiceText, setVoiceText] = useState('');
   const [uploadedApps, setUploadedApps] = useState<AppItem[]>([]);
   const [installedPackages, setInstalledPackages] = useState<AppItem[]>([]);
@@ -141,7 +162,7 @@ export default function Home() {
 
         if (statusRes.status === 'fulfilled' && statusRes.value.ok && isMounted) {
           const data = await statusRes.value.json();
-          setAdbHealthy(data.adbConnected === true);
+          setAdbHealthy(data.adbConnected === true && data.bootCompleted !== false);
         }
       } catch (e) {
         console.error('Failed to fetch installed apps/health', e);
@@ -163,17 +184,18 @@ export default function Home() {
 
     try {
       const apiUrl = getApiUrl();
-      const res = await fetch(`${apiUrl}/launch-package`, {
+      const res = await fetchWithTimeout(`${apiUrl}/launch-package`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ packageName }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Launch failed');
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || data.message || 'Launch failed');
+      }
 
       setUploadStatus(`App ${packageName} launched!`);
-      setStreamUrl(data.streamUrl || getDefaultStreamUrl());
-      setIsFullScreen(true);
+      openStream(data.streamUrl);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Launch failed';
       setUploadStatus(`Error: ${errorMessage}`);
@@ -185,20 +207,23 @@ export default function Home() {
   const handleLaunchUploadedApk = async (filename: string) => {
     setUploadStatus(`Installing and launching ${filename}...`);
     setIsLaunching(true);
+    // Show stream shell early so TV isn't stuck on a blank "installing" state with no feedback
+    openStream();
 
     try {
       const apiUrl = getApiUrl();
-      const launchRes = await fetch(`${apiUrl}/launch`, {
+      const launchRes = await fetchWithTimeout(`${apiUrl}/launch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename }),
       });
       const launchData = await launchRes.json();
-      if (!launchRes.ok) throw new Error(launchData.error || 'Launch failed');
+      if (!launchRes.ok || launchData.success === false) {
+        throw new Error(launchData.error || launchData.message || 'Launch failed');
+      }
 
       setUploadStatus('App ready! Streaming...');
-      setStreamUrl(launchData.streamUrl || getDefaultStreamUrl());
-      setIsFullScreen(true);
+      openStream(launchData.streamUrl);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Launch failed';
       setUploadStatus(`Error: ${errorMessage}`);
@@ -370,26 +395,28 @@ export default function Home() {
       formData.append('apk', file);
       const apiUrl = getApiUrl();
 
-      const uploadRes = await fetch(`${apiUrl}/upload`, {
+      const uploadRes = await fetchWithTimeout(`${apiUrl}/upload`, {
         method: 'POST',
         body: formData,
-      });
+      }, 60000);
       const uploadData = await uploadRes.json();
       if (!uploadRes.ok) throw new Error(uploadData.error || 'Upload failed');
 
-      setUploadStatus('Installing package on container...');
+      setUploadStatus('Installing on emulator (may take a minute)...');
+      openStream();
 
-      const launchRes = await fetch(`${apiUrl}/launch`, {
+      const launchRes = await fetchWithTimeout(`${apiUrl}/launch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename: uploadData.filename }),
       });
       const launchData = await launchRes.json();
-      if (!launchRes.ok) throw new Error(launchData.error || 'Launch failed');
+      if (!launchRes.ok || launchData.success === false) {
+        throw new Error(launchData.error || launchData.message || 'Launch failed');
+      }
 
       setUploadStatus('App ready! Streaming...');
-      setStreamUrl(launchData.streamUrl || getDefaultStreamUrl());
-      setIsFullScreen(true);
+      openStream(launchData.streamUrl);
       fetchApps();
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
