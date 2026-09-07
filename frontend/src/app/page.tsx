@@ -224,6 +224,7 @@ export default function Home() {
 
       setUploadStatus('App ready! Streaming...');
       openStream(launchData.streamUrl);
+      fetchApps();
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Launch failed';
       setUploadStatus(`Error: ${errorMessage}`);
@@ -568,11 +569,11 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Umbrel OS App Icons Grid */}
-            <div className="w-full mt-4">
-              <div className="flex items-center justify-between mb-4">
+            {/* Apps: installed on device vs APK files waiting to install */}
+            <div className="w-full mt-4 space-y-6">
+              <div className="flex items-center justify-between">
                 <h2 className="text-xs font-bold uppercase tracking-widest text-slate-300 drop-shadow">
-                  Applications ({uploadedApps.length + installedPackages.length})
+                  On device ({installedPackages.length})
                 </h2>
                 <button
                   onClick={fetchApps}
@@ -582,9 +583,7 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* App Icon Grid */}
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-6">
-                {/* APK Upload Launcher Tile */}
                 <label className="flex flex-col items-center gap-2 cursor-pointer group">
                   <div className={`w-20 h-20 umbrel-app-icon rounded-3xl flex items-center justify-center text-3xl transition-all ${
                     isLaunching ? 'animate-pulse bg-indigo-600/50' : 'group-hover:scale-105'
@@ -606,28 +605,18 @@ export default function Home() {
                   />
                 </label>
 
-                {/* Uploaded APKs */}
-                {uploadedApps.map((app, idx) => (
-                  <div
-                    key={`apk-${idx}`}
-                    onClick={() => app.filename && handleLaunchUploadedApk(app.filename)}
-                    className="flex flex-col items-center gap-2 cursor-pointer group"
-                  >
-                    <div className="w-20 h-20 umbrel-app-icon rounded-3xl flex items-center justify-center text-3xl group-hover:scale-105 transition-all bg-gradient-to-tr from-indigo-600/40 to-violet-600/40">
-                      📦
-                    </div>
-                    <span className="text-xs font-semibold text-slate-200 truncate max-w-[90px] group-hover:text-white transition">
-                      {app.name}
-                    </span>
-                  </div>
-                ))}
+                {installedPackages.length === 0 && !isLaunching && (
+                  <p className="col-span-full text-xs text-slate-400">
+                    No third-party apps on the emulator yet. Upload an APK, or open the Android app drawer on the stream after install succeeds.
+                  </p>
+                )}
 
-                {/* Installed Packages */}
                 {installedPackages.map((app, idx) => (
                   <div
-                    key={`pkg-${idx}`}
+                    key={`pkg-${app.packageName || idx}`}
                     onClick={() => app.packageName && handleLaunchPackage(app.packageName)}
                     className="flex flex-col items-center gap-2 cursor-pointer group"
+                    title={app.packageName}
                   >
                     <div className="w-20 h-20 umbrel-app-icon rounded-3xl flex items-center justify-center text-3xl group-hover:scale-105 transition-all bg-gradient-to-tr from-emerald-600/40 to-teal-600/40">
                       🤖
@@ -639,9 +628,33 @@ export default function Home() {
                 ))}
               </div>
 
-              {/* Status Feedback Banner */}
+              <div>
+                <h2 className="text-xs font-bold uppercase tracking-widest text-slate-300 drop-shadow mb-2">
+                  APK files on server ({uploadedApps.length})
+                </h2>
+                <p className="text-[11px] text-slate-400 mb-4">
+                  These are uploaded <span className="font-mono">.apk</span> files — not launcher icons. Tap one to install/reinstall on the emulator. They only move to &quot;On device&quot; after ADB install succeeds.
+                </p>
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-6">
+                  {uploadedApps.map((app, idx) => (
+                    <div
+                      key={`apk-${app.filename || idx}`}
+                      onClick={() => app.filename && handleLaunchUploadedApk(app.filename)}
+                      className="flex flex-col items-center gap-2 cursor-pointer group"
+                    >
+                      <div className="w-20 h-20 umbrel-app-icon rounded-3xl flex items-center justify-center text-3xl group-hover:scale-105 transition-all bg-gradient-to-tr from-indigo-600/40 to-violet-600/40">
+                        📦
+                      </div>
+                      <span className="text-xs font-semibold text-slate-200 truncate max-w-[90px] group-hover:text-white transition">
+                        {app.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {uploadStatus && (
-                <div className="mt-6 p-3 umbrel-widget rounded-2xl w-full text-left">
+                <div className="mt-2 p-3 umbrel-widget rounded-2xl w-full text-left">
                   <p className="text-xs font-mono text-emerald-400">➜ {uploadStatus}</p>
                 </div>
               )}
