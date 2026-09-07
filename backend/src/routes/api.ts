@@ -39,7 +39,7 @@ router.get('/status', async (req, res) => {
   res.json({
     status: 'online',
     adbConnected: connected,
-    streamUrl: process.env.STREAM_URL || 'http://localhost:6080',
+    streamUrl: process.env.STREAM_URL || process.env.PUBLIC_STREAM_URL || 'http://localhost:6080',
     timestamp: new Date().toISOString(),
   });
 });
@@ -178,7 +178,7 @@ router.post('/launch', async (req, res) => {
   res.json({
     message: `APK installation initiated: ${installResult.message}`,
     success: installResult.success,
-    streamUrl: process.env.STREAM_URL || 'http://localhost:6080',
+    streamUrl: process.env.STREAM_URL || process.env.PUBLIC_STREAM_URL || 'http://localhost:6080',
   });
 });
 
@@ -222,7 +222,7 @@ router.post('/launch-package', async (req, res) => {
   res.json({
     message: `Package launch initiated: ${launchResult.message}`,
     success: launchResult.success,
-    streamUrl: process.env.STREAM_URL || 'http://localhost:6080',
+    streamUrl: process.env.STREAM_URL || process.env.PUBLIC_STREAM_URL || 'http://localhost:6080',
   });
 });
 

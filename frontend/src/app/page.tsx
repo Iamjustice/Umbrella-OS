@@ -4,6 +4,7 @@ import VirtualRemote from './components/VirtualRemote';
 import SystemStatsWidget from './components/SystemStatsWidget';
 import AppStoreModal from './components/AppStoreModal';
 import SettingsModal from './components/SettingsModal';
+import { getApiUrl, getWsUrl, getDefaultStreamUrl } from '../lib/runtimeConfig';
 
 // Android Keycodes mapping for TV Remote & Bluetooth Keyboards
 const KEY_MAP: Record<string, number> = {
@@ -104,7 +105,7 @@ export default function Home() {
   const fetchApps = useCallback(async () => {
     setLoadingApps(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+      const apiUrl = getApiUrl();
       const res = await fetch(`${apiUrl}/apps`);
       if (res.ok) {
         const data = await res.json();
@@ -126,7 +127,7 @@ export default function Home() {
 
     const loadInitialAppsAndHealth = async () => {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+        const apiUrl = getApiUrl();
         const [appsRes, statusRes] = await Promise.allSettled([
           fetch(`${apiUrl}/apps`),
           fetch(`${apiUrl}/status`),
@@ -161,7 +162,7 @@ export default function Home() {
     setIsLaunching(true);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+      const apiUrl = getApiUrl();
       const res = await fetch(`${apiUrl}/launch-package`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -171,7 +172,7 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error || 'Launch failed');
 
       setUploadStatus(`App ${packageName} launched!`);
-      setStreamUrl(data.streamUrl || 'http://localhost:6080');
+      setStreamUrl(data.streamUrl || getDefaultStreamUrl());
       setIsFullScreen(true);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Launch failed';
@@ -186,7 +187,7 @@ export default function Home() {
     setIsLaunching(true);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+      const apiUrl = getApiUrl();
       const launchRes = await fetch(`${apiUrl}/launch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -196,7 +197,7 @@ export default function Home() {
       if (!launchRes.ok) throw new Error(launchData.error || 'Launch failed');
 
       setUploadStatus('App ready! Streaming...');
-      setStreamUrl(launchData.streamUrl || 'http://localhost:6080');
+      setStreamUrl(launchData.streamUrl || getDefaultStreamUrl());
       setIsFullScreen(true);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Launch failed';
@@ -208,7 +209,7 @@ export default function Home() {
 
   // 1. Initialize WebSocket for real-time TV remote / controller input
   useEffect(() => {
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4000/ws';
+    const wsUrl = getWsUrl();
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
@@ -367,7 +368,7 @@ export default function Home() {
     try {
       const formData = new FormData();
       formData.append('apk', file);
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+      const apiUrl = getApiUrl();
 
       const uploadRes = await fetch(`${apiUrl}/upload`, {
         method: 'POST',
@@ -387,7 +388,7 @@ export default function Home() {
       if (!launchRes.ok) throw new Error(launchData.error || 'Launch failed');
 
       setUploadStatus('App ready! Streaming...');
-      setStreamUrl(launchData.streamUrl || 'http://localhost:6080');
+      setStreamUrl(launchData.streamUrl || getDefaultStreamUrl());
       setIsFullScreen(true);
       fetchApps();
     } catch (err: unknown) {

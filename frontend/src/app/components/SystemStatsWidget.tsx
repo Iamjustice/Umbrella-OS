@@ -1,4 +1,5 @@
 'use client';
+import { getApiUrl } from '../../lib/runtimeConfig';
 import { useState, useEffect } from 'react';
 
 interface StatsData {
@@ -21,7 +22,7 @@ export default function SystemStatsWidget() {
 
     const fetchStats = async () => {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+        const apiUrl = getApiUrl();
         const res = await fetch(`${apiUrl}/system/stats`);
         if (res.ok && isMounted) {
           const data = await res.json();

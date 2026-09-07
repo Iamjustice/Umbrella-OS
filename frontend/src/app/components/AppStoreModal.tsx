@@ -1,4 +1,5 @@
 'use client';
+import { getApiUrl } from '../../lib/runtimeConfig';
 import { useState, useEffect } from 'react';
 
 interface AppStoreItem {
@@ -26,7 +27,7 @@ export default function AppStoreModal({ isOpen, onClose }: AppStoreModalProps) {
     if (isOpen) {
       const fetchStoreApps = async () => {
         try {
-          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+          const apiUrl = getApiUrl();
           const res = await fetch(`${apiUrl}/appstore/apps`);
           if (res.ok) {
             const data = await res.json();
