@@ -156,17 +156,39 @@ export class AdbService {
     }
   }
 
-  static async listInstalledPackages(): Promise<string[]> {
+    static async listInstalledPackages(): Promise<string[]> {
     try {
-      await this.connect();
+      const connected = await this.connect();
+      if (!connected) return [];
+
+      // Prefer third-party packages; if empty (or device still settling), fall back to launchable apps
       const { stdout } = await execAdb(
         `adb -s ${this.targetDevice} shell pm list packages -3`,
         30_000
       );
-      return stdout
+      let packages = stdout
         .split('\n')
         .map((line) => line.replace('package:', '').trim())
         .filter((pkg) => pkg.length > 0);
+
+      if (packages.length === 0) {
+        const { stdout: launchable } = await execAdb(
+          `adb -s ${this.targetDevice} shell cmd package query-activities --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER`,
+          30_000
+        );
+        packages = [
+          ...new Set(
+            launchable
+              .split('\n')
+              .map((line) => line.trim())
+              .filter((line) => line.includes('/'))
+              .map((line) => line.split('/')[0])
+              .filter((pkg) => pkg && !pkg.startsWith('com.android.') && pkg !== 'android')
+          ),
+        ];
+      }
+
+      return packages;
     } catch (err: any) {
       console.error(`[ADB List Packages Error]:`, err.message);
       return [];
