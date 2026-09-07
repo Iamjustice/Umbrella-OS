@@ -4,25 +4,22 @@
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
 # TV / phone browser: http://<EC2_PUBLIC_IP>/
+#
+# Important: use ports: !reset [] so host ports from docker-compose.yml are NOT
+# merged/double-bound (that caused "5554 address already in use").
 
 services:
   android:
-    # Only publish on loopback; Caddy is the public entrypoint
-    ports:
-      - "127.0.0.1:5554:5554"
-      - "127.0.0.1:5555:5555"
-      - "127.0.0.1:6080:6080"
+    ports: !reset []
 
   backend:
-    ports:
-      - "127.0.0.1:4000:4000"
+    ports: !reset []
     environment:
       STREAM_URL: /novnc/
       PUBLIC_STREAM_URL: /novnc/
 
   frontend:
-    ports:
-      - "127.0.0.1:3000:3000"
+    ports: !reset []
 
   caddy:
     image: caddy:2
