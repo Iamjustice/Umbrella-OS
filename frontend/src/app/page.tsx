@@ -111,7 +111,17 @@ export default function Home() {
   };
 
   const openStream = (url?: string | null) => {
-    setStreamUrl(url || getDefaultStreamUrl());
+    // Prefer same-origin /novnc/ on remote hosts (Caddy). Absolute :6080 often isn't published.
+    let next = url || getDefaultStreamUrl();
+    if (typeof window !== 'undefined') {
+      const host = window.location.hostname;
+      if (host !== 'localhost' && host !== '127.0.0.1') {
+        if (!next || next.includes(':6080') || next === 'http://localhost:6080') {
+          next = `${window.location.origin}/novnc/`;
+        }
+      }
+    }
+    setStreamUrl(next);
     setIsFullScreen(true);
   };
 
@@ -498,36 +508,97 @@ export default function Home() {
       {/* Main Umbrel OS Desktop Area */}
       <main className="w-full max-w-6xl flex-1 flex flex-col items-center justify-start my-6 gap-8">
         {streamUrl ? (
-          /* Stream View Display */
-          <div
-            onPointerDown={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const xPct = (e.clientX - rect.left) / rect.width;
-              const yPct = (e.clientY - rect.top) / rect.height;
-              const tapX = Math.round(xPct * 1080);
-              const tapY = Math.round(yPct * 1920);
-              sendTouch(tapX, tapY);
-            }}
-            className={`w-full umbrel-glass-dock rounded-3xl overflow-hidden shadow-2xl border border-slate-700/40 flex flex-col items-center justify-center relative cursor-crosshair ${
-              isFullScreen ? 'fixed inset-0 z-50 rounded-none border-0' : 'h-[620px]'
-            }`}
-          >
-            <iframe
-              src={streamUrl}
-              className={`w-full h-full border-0 pointer-events-none ${streamFit === 'cover' ? 'object-cover' : 'object-contain'}`}
-              title="Umbrella Android Cloud Display"
-              allow="autoplay; fullscreen"
-            />
-            {isFullScreen && (
+          /* Stream + always-visible Android nav (Home/Back/Settings) */
+          <div className={`w-full flex flex-col gap-4 ${isFullScreen ? 'fixed inset-0 z-50 bg-slate-950 p-3' : ''}`}>
+            <div className="w-full flex flex-wrap items-center justify-center gap-2 umbrel-glass-dock rounded-2xl px-3 py-2 border border-slate-700/50 pointer-events-auto z-[60]">
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsFullScreen(false);
-                }}
-                className="absolute top-6 right-6 umbrel-glass-dock hover:bg-slate-800 text-white px-6 py-2 rounded-full border border-slate-700 font-medium z-50 shadow-xl pointer-events-auto"
+                type="button"
+                onClick={() => sendKeyEvent(4)}
+                className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold border border-slate-600"
               >
-                ✕ Exit Full Screen
+                ↩️ Back
               </button>
+              <button
+                type="button"
+                onClick={() => sendKeyEvent(3)}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-xs font-bold shadow"
+              >
+                🏠 Home
+              </button>
+              <button
+                type="button"
+                onClick={() => sendKeyEvent(187)}
+                className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold border border-slate-600"
+              >
+                ▢ Recents
+              </button>
+              <button
+                type="button"
+                onClick={() => handleLaunchPackage('com.android.settings')}
+                className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold border border-slate-600"
+              >
+                ⚙️ Settings
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsFullScreen(false);
+                  setStreamUrl(null);
+                }}
+                className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold border border-slate-600"
+              >
+                📋 Launcher
+              </button>
+              <a
+                href={streamUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-2 rounded-xl bg-emerald-800/80 hover:bg-emerald-700 text-xs font-semibold border border-emerald-600"
+              >
+                ↗ Open stream
+              </a>
+              <button
+                type="button"
+                onClick={() => setIsFullScreen(!isFullScreen)}
+                className="px-3 py-2 rounded-xl umbrel-button-primary text-xs font-bold"
+              >
+                {isFullScreen ? '⬇ Minimize' : '⬆ Full Screen'}
+              </button>
+            </div>
+
+            <div
+              onPointerDown={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const xPct = (e.clientX - rect.left) / rect.width;
+                const yPct = (e.clientY - rect.top) / rect.height;
+                const tapX = Math.round(xPct * 1080);
+                const tapY = Math.round(yPct * 1920);
+                sendTouch(tapX, tapY);
+              }}
+              className={`w-full umbrel-glass-dock rounded-3xl overflow-hidden shadow-2xl border border-slate-700/40 flex flex-col items-center justify-center relative cursor-crosshair ${
+                isFullScreen ? 'flex-1 min-h-0 rounded-2xl' : 'h-[620px]'
+              }`}
+            >
+              <iframe
+                src={streamUrl}
+                className={`w-full h-full border-0 pointer-events-none ${streamFit === 'cover' ? 'object-cover' : 'object-contain'}`}
+                title="Umbrella Android Cloud Display"
+                allow="autoplay; fullscreen"
+              />
+            </div>
+
+            {!isFullScreen && (
+              <div className="flex justify-center w-full">
+                <VirtualRemote
+                  isPlaystationControllerConnected={isPlaystationController}
+                  onSendKeyEvent={sendKeyEvent}
+                />
+              </div>
+            )}
+            {uploadStatus && (
+              <div className="p-3 umbrel-widget rounded-2xl w-full text-left">
+                <p className="text-xs font-mono text-emerald-400">➜ {uploadStatus}</p>
+              </div>
             )}
           </div>
         ) : (
