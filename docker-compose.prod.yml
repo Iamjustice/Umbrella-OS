@@ -24,6 +24,10 @@ services:
       APPIUM: "false"
       WEB_VNC: "true"
       WEB_LOG: "false"
+      # Match VNC framebuffer to phone skin so emulator fills the stream
+      # (avoids tiny Emulator window on 1600x900 DOCKERANDROID desktop)
+      SCREEN_WIDTH: "1080"
+      SCREEN_HEIGHT: "1920"
 
   backend:
     ports: !reset []
