@@ -8,16 +8,40 @@ http://18.209.102.167.sslip.io {
 
 https://18.209.102.167.sslip.io {
 	encode gzip
-	handle /api* { reverse_proxy backend:4000 }
-	handle /ws { reverse_proxy backend:4000 }
-	handle_path /novnc/* { reverse_proxy android:6080 }
-	handle { reverse_proxy frontend:3000 }
+
+	handle /api* {
+		reverse_proxy backend:4000
+	}
+
+	handle /ws {
+		reverse_proxy backend:4000
+	}
+
+	handle_path /novnc/* {
+		reverse_proxy android:6080
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
 }
 
 :80 {
 	encode gzip
-	handle /api* { reverse_proxy backend:4000 }
-	handle /ws { reverse_proxy backend:4000 }
-	handle_path /novnc/* { reverse_proxy android:6080 }
-	handle { reverse_proxy frontend:3000 }
+
+	handle /api* {
+		reverse_proxy backend:4000
+	}
+
+	handle /ws {
+		reverse_proxy backend:4000
+	}
+
+	handle_path /novnc/* {
+		reverse_proxy android:6080
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
 }
