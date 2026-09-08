@@ -22,15 +22,13 @@ services:
       DEVICE: Samsung Galaxy S10
       EMULATOR_ADDITIONAL_ARGS: "-gpu swiftshader_indirect -no-metrics"
       EMULATOR_NO_SKIN: "true"
-      QT_SCALE_FACTOR: "3"
-      QT_AUTO_SCREEN_SCALE_FACTOR: "0"
       APPIUM: "false"
       WEB_VNC: "true"
       WEB_LOG: "false"
-      # Match VNC framebuffer to phone skin so emulator fills the stream
-      # (avoids tiny Emulator window on 1600x900 DOCKERANDROID desktop)
-      SCREEN_WIDTH: "1080"
-      SCREEN_HEIGHT: "1920"
+      # Match VNC framebuffer to the no-skin Emulator window (~360x640)
+      # so Android fills noVNC (1600x900 left a tiny phone on green desktop)
+      SCREEN_WIDTH: "360"
+      SCREEN_HEIGHT: "640"
 
   backend:
     ports: !reset []
