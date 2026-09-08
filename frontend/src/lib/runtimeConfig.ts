@@ -24,6 +24,8 @@ export function getWsUrl(): string {
 }
 
 export function getDefaultStreamUrl(): string {
-  if (isRemoteBrowser()) return `${window.location.origin}/novnc/`;
+  if (isRemoteBrowser()) {
+    return `${window.location.origin}/novnc/vnc.html?autoconnect=1&resize=scale&reconnect=1&show_dot=0`;
+  }
   return process.env.NEXT_PUBLIC_STREAM_URL || 'http://localhost:6080';
 }

@@ -41,31 +41,36 @@ export default function VirtualRemote({
           {/* D-PAD Cross */}
           <div className="relative w-32 h-32 bg-slate-950/60 rounded-2xl border border-slate-800 flex items-center justify-center p-2 shadow-inner">
             <button
-              onClick={() => handleKey(19)} // UP
+              onClick={() => handleKey(19)}
+              onPointerDown={(e) => { e.preventDefault(); handleKey(19); }} // UP
               className="absolute top-1 w-10 h-10 bg-slate-800/90 hover:bg-indigo-600 active:scale-95 text-white rounded-lg flex items-center justify-center font-black border border-slate-700/60 shadow transition-all"
             >
               ▲
             </button>
             <button
-              onClick={() => handleKey(21)} // LEFT
+              onClick={() => handleKey(21)}
+              onPointerDown={(e) => { e.preventDefault(); handleKey(21); }} // LEFT
               className="absolute left-1 w-10 h-10 bg-slate-800/90 hover:bg-indigo-600 active:scale-95 text-white rounded-lg flex items-center justify-center font-black border border-slate-700/60 shadow transition-all"
             >
               ◄
             </button>
             <button
-              onClick={() => handleKey(66)} // CENTER / OK
+              onClick={() => handleKey(66)}
+              onPointerDown={(e) => { e.preventDefault(); handleKey(66); }} // CENTER / OK
               className="w-8 h-8 bg-indigo-600 hover:bg-indigo-500 active:scale-90 text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-lg transition-all"
             >
               OK
             </button>
             <button
-              onClick={() => handleKey(22)} // RIGHT
+              onClick={() => handleKey(22)}
+              onPointerDown={(e) => { e.preventDefault(); handleKey(22); }} // RIGHT
               className="absolute right-1 w-10 h-10 bg-slate-800/90 hover:bg-indigo-600 active:scale-95 text-white rounded-lg flex items-center justify-center font-black border border-slate-700/60 shadow transition-all"
             >
               ►
             </button>
             <button
-              onClick={() => handleKey(20)} // DOWN
+              onClick={() => handleKey(20)}
+              onPointerDown={(e) => { e.preventDefault(); handleKey(20); }} // DOWN
               className="absolute bottom-1 w-10 h-10 bg-slate-800/90 hover:bg-indigo-600 active:scale-95 text-white rounded-lg flex items-center justify-center font-black border border-slate-700/60 shadow transition-all"
             >
               ▼
@@ -77,6 +82,7 @@ export default function VirtualRemote({
             {/* Triangle (Y) */}
             <button
               onClick={() => handleKey(100)}
+              onPointerDown={(e) => { e.preventDefault(); handleKey(100); }}
               className="absolute top-1 w-10 h-10 bg-slate-800/90 hover:bg-emerald-600 active:scale-95 text-emerald-400 hover:text-white rounded-full flex items-center justify-center font-black border border-slate-700/60 shadow transition-all"
             >
               ▲
@@ -84,6 +90,7 @@ export default function VirtualRemote({
             {/* Square (X) */}
             <button
               onClick={() => handleKey(99)}
+              onPointerDown={(e) => { e.preventDefault(); handleKey(99); }}
               className="absolute left-1 w-10 h-10 bg-slate-800/90 hover:bg-pink-600 active:scale-95 text-pink-400 hover:text-white rounded-full flex items-center justify-center font-black border border-slate-700/60 shadow transition-all"
             >
               ■
@@ -91,6 +98,7 @@ export default function VirtualRemote({
             {/* Circle (B -> BACK) */}
             <button
               onClick={() => handleKey(4)}
+              onPointerDown={(e) => { e.preventDefault(); handleKey(4); }}
               className="absolute right-1 w-10 h-10 bg-slate-800/90 hover:bg-rose-600 active:scale-95 text-rose-400 hover:text-white rounded-full flex items-center justify-center font-black border border-slate-700/60 shadow transition-all"
             >
               ●
@@ -98,6 +106,7 @@ export default function VirtualRemote({
             {/* Cross (A -> SELECT) */}
             <button
               onClick={() => handleKey(96)}
+              onPointerDown={(e) => { e.preventDefault(); handleKey(96); }}
               className="absolute bottom-1 w-10 h-10 bg-slate-800/90 hover:bg-blue-600 active:scale-95 text-blue-400 hover:text-white rounded-full flex items-center justify-center font-black border border-slate-700/60 shadow transition-all"
             >
               ✖
@@ -109,18 +118,21 @@ export default function VirtualRemote({
         <div className="grid grid-cols-3 gap-2.5 w-full">
           <button
             onClick={() => handleKey(4)}
+              onPointerDown={(e) => { e.preventDefault(); handleKey(4); }}
             className="py-2.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 active:scale-95 rounded-xl text-xs font-semibold border border-slate-700/50 transition-all flex items-center justify-center gap-1"
           >
             ↩️ BACK
           </button>
           <button
             onClick={() => handleKey(3)}
+              onPointerDown={(e) => { e.preventDefault(); handleKey(3); }}
             className="py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 active:scale-95 text-white rounded-xl text-xs font-bold shadow-lg transition-all flex items-center justify-center gap-1"
           >
             🏠 HOME
           </button>
           <button
             onClick={() => handleKey(82)}
+              onPointerDown={(e) => { e.preventDefault(); handleKey(82); }}
             className="py-2.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 active:scale-95 rounded-xl text-xs font-semibold border border-slate-700/50 transition-all flex items-center justify-center gap-1"
           >
             ☰ MENU
