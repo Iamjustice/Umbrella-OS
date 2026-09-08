@@ -1,28 +1,28 @@
 'use client';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import VirtualRemote from './components/VirtualRemote';
-import SystemStatsWidget from './components/SystemStatsWidget';
-import AppStoreModal from './components/AppStoreModal';
 import SettingsModal from './components/SettingsModal';
+import WidgetRow from './components/WidgetRow';
+import DesktopDock from './components/DesktopDock';
 import { getApiUrl, getWsUrl, getDefaultStreamUrl } from '../lib/runtimeConfig';
 
 // Android Keycodes mapping for TV Remote & Bluetooth Keyboards
 const KEY_MAP: Record<string, number> = {
-  ArrowUp: 19,      // DPAD_UP
-  ArrowDown: 20,    // DPAD_DOWN
-  ArrowLeft: 21,    // DPAD_LEFT
-  ArrowRight: 22,   // DPAD_RIGHT
-  Enter: 66,        // ENTER / KEYCODE_ENTER
+  ArrowUp: 19,
+  ArrowDown: 20,
+  ArrowLeft: 21,
+  ArrowRight: 22,
+  Enter: 66,
   NumpadEnter: 66,
-  Space: 62,        // SPACE
-  Backspace: 67,    // DEL / BACKSPACE
-  Escape: 4,        // BACK
-  BrowserBack: 4,   // Hisense / TV BrowserBack
+  Space: 62,
+  Backspace: 67,
+  Escape: 4,
+  BrowserBack: 4,
   GoBack: 4,
   Back: 4,
-  Home: 3,          // HOME
-  KeyH: 3,          // HOME shortcut
-  Tab: 61,          // TAB
+  Home: 3,
+  KeyH: 3,
+  Tab: 61,
   AudioVolumeUp: 24,
   AudioVolumeDown: 25,
   MediaPlayPause: 85,
@@ -33,18 +33,17 @@ const KEY_MAP: Record<string, number> = {
   MediaStop: 86,
 };
 
-// Gamepad Button Map to Android Keycodes
 const GAMEPAD_BUTTON_MAP: Record<number, number> = {
-  0: 96,  // A (BUTTON_A / SELECT)
-  1: 4,   // B (BACK)
-  2: 99,  // X (BUTTON_X)
-  3: 100, // Y (BUTTON_Y)
-  12: 19, // DPAD_UP
-  13: 20, // DPAD_DOWN
-  14: 21, // DPAD_LEFT
-  15: 22, // DPAD_RIGHT
-  9: 3,   // START -> HOME
-  8: 82,  // SELECT -> MENU
+  0: 96,
+  1: 4,
+  2: 99,
+  3: 100,
+  12: 19,
+  13: 20,
+  14: 21,
+  15: 22,
+  9: 3,
+  8: 82,
 };
 
 interface ISpeechRecognition {
@@ -79,6 +78,21 @@ interface AppItem {
   type: 'apk' | 'package';
 }
 
+function greetingForHour(hour: number): string {
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+const APP_ICON_COLORS = [
+  'from-emerald-500/50 to-teal-600/40',
+  'from-indigo-500/50 to-violet-600/40',
+  'from-sky-500/50 to-blue-600/40',
+  'from-amber-500/50 to-orange-600/40',
+  'from-rose-500/50 to-pink-600/40',
+  'from-fuchsia-500/50 to-purple-600/40',
+];
+
 export default function Home() {
   const [uploadStatus, setUploadStatus] = useState<string>('');
   const [isLaunching, setIsLaunching] = useState(false);
@@ -88,6 +102,43 @@ export default function Home() {
   const [gamepadConnected, setGamepadConnected] = useState(false);
   const [isPlaystationController, setIsPlaystationController] = useState(false);
   const [isListeningVoice, setIsListeningVoice] = useState(false);
+  const [voiceText, setVoiceText] = useState('');
+  const [uploadedApps, setUploadedApps] = useState<AppItem[]>([]);
+  const [installedPackages, setInstalledPackages] = useState<AppItem[]>([]);
+  const [loadingApps, setLoadingApps] = useState(false);
+  const [adbHealthy, setAdbHealthy] = useState(false);
+  const [streamFit, setStreamFit] = useState<'contain' | 'cover'>('contain');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showRemote, setShowRemote] = useState(false);
+  const [showUploads, setShowUploads] = useState(true);
+  const [greeting, setGreeting] = useState('Good afternoon');
+  const [clockLabel, setClockLabel] = useState('');
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const lastButtonStateRef = useRef<Record<number, boolean>>({});
+  const lastAxisStateRef = useRef<Record<string, boolean>>({});
+  const streamUrlRef = useRef<string | null>(null);
+  const uploadsSectionRef = useRef<HTMLDivElement | null>(null);
+  const remoteSectionRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    streamUrlRef.current = streamUrl;
+  }, [streamUrl]);
+
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date();
+      setGreeting(greetingForHour(now.getHours()));
+      setClockLabel(
+        now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+      );
+    };
+    tick();
+    const id = setInterval(tick, 30000);
+    return () => clearInterval(id);
+  }, []);
 
   const sendKeyEvent = useCallback((keyCode: number) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -117,7 +168,6 @@ export default function Home() {
   };
 
   const openStream = (url?: string | null) => {
-    // Prefer same-origin autoconnect noVNC on remote hosts (Caddy). Absolute :6080 often isn't published.
     const remoteNovnc =
       typeof window !== 'undefined'
         ? `${window.location.origin}/novnc/vnc.html?autoconnect=1&resize=scale&reconnect=1&show_dot=0`
@@ -138,19 +188,8 @@ export default function Home() {
       }
     }
     setStreamUrl(next);
-    // Keep VirtualRemote visible after launch (fullscreen hid remotes before).
     setIsFullScreen(false);
   };
-
-  const [voiceText, setVoiceText] = useState('');
-  const [uploadedApps, setUploadedApps] = useState<AppItem[]>([]);
-  const [installedPackages, setInstalledPackages] = useState<AppItem[]>([]);
-  const [loadingApps, setLoadingApps] = useState(false);
-
-  const wsRef = useRef<WebSocket | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const lastButtonStateRef = useRef<Record<number, boolean>>({});
-  const lastAxisStateRef = useRef<Record<string, boolean>>({});
 
   const fetchApps = useCallback(async () => {
     setLoadingApps(true);
@@ -168,9 +207,6 @@ export default function Home() {
       setLoadingApps(false);
     }
   }, []);
-
-  const [adbHealthy, setAdbHealthy] = useState(false);
-  const [streamFit, setStreamFit] = useState<'contain' | 'cover'>('contain');
 
   useEffect(() => {
     let isMounted = true;
@@ -236,7 +272,6 @@ export default function Home() {
   const handleLaunchUploadedApk = async (filename: string) => {
     setUploadStatus(`Installing and launching ${filename}...`);
     setIsLaunching(true);
-    // Show stream shell early so TV isn't stuck on a blank "installing" state with no feedback
     openStream();
 
     try {
@@ -262,7 +297,7 @@ export default function Home() {
     }
   };
 
-  // 1. Initialize WebSocket for real-time TV remote / controller input (reconnect w/ backoff)
+  // WebSocket reconnect with backoff
   useEffect(() => {
     let cancelled = false;
     let retryMs = 1000;
@@ -291,9 +326,7 @@ export default function Home() {
         }, retryMs);
       };
 
-      ws.onerror = () => {
-        // onclose will fire and schedule reconnect
-      };
+      ws.onerror = () => {};
     };
 
     connectWs();
@@ -305,30 +338,119 @@ export default function Home() {
     };
   }, []);
 
-  // 2. Listen to TV Remote & Bluetooth Keyboard events (capture so Hisense keys beat iframe focus)
+  // Keyboard: launcher spatial nav when stream closed; ADB KEY_MAP when stream open
   useEffect(() => {
+    const moveLauncherFocus = (direction: 'up' | 'down' | 'left' | 'right') => {
+      const nodes = Array.from(
+        document.querySelectorAll<HTMLElement>('.launcher-focusable')
+      ).filter((el) => {
+        const style = window.getComputedStyle(el);
+        return style.visibility !== 'hidden' && style.display !== 'none' && el.offsetParent !== null;
+      });
+      if (nodes.length === 0) return;
+
+      const active = document.activeElement as HTMLElement | null;
+      let current = nodes.findIndex((n) => n === active || n.contains(active));
+      if (current < 0) {
+        nodes[0].focus();
+        return;
+      }
+
+      const curRect = nodes[current].getBoundingClientRect();
+      const cx = curRect.left + curRect.width / 2;
+      const cy = curRect.top + curRect.height / 2;
+
+      let bestIdx = -1;
+      let bestScore = Infinity;
+
+      nodes.forEach((node, idx) => {
+        if (idx === current) return;
+        const r = node.getBoundingClientRect();
+        const nx = r.left + r.width / 2;
+        const ny = r.top + r.height / 2;
+        const dx = nx - cx;
+        const dy = ny - cy;
+
+        let ok = false;
+        if (direction === 'left') ok = dx < -8 && Math.abs(dy) < Math.abs(dx) + 40;
+        if (direction === 'right') ok = dx > 8 && Math.abs(dy) < Math.abs(dx) + 40;
+        if (direction === 'up') ok = dy < -8 && Math.abs(dx) < Math.abs(dy) + 40;
+        if (direction === 'down') ok = dy > 8 && Math.abs(dx) < Math.abs(dy) + 40;
+        if (!ok) return;
+
+        const score = Math.abs(dx) + Math.abs(dy) * 1.2;
+        if (score < bestScore) {
+          bestScore = score;
+          bestIdx = idx;
+        }
+      });
+
+      if (bestIdx >= 0) {
+        nodes[bestIdx].focus();
+      } else {
+        // wrap / step linearly as fallback
+        const step = direction === 'left' || direction === 'up' ? -1 : 1;
+        const next = (current + step + nodes.length) % nodes.length;
+        nodes[next].focus();
+      }
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
+      const onLauncher = streamUrlRef.current == null;
+      const isArrow =
+        e.code === 'ArrowUp' ||
+        e.code === 'ArrowDown' ||
+        e.code === 'ArrowLeft' ||
+        e.code === 'ArrowRight' ||
+        e.key === 'ArrowUp' ||
+        e.key === 'ArrowDown' ||
+        e.key === 'ArrowLeft' ||
+        e.key === 'ArrowRight';
+      const isActivate = e.code === 'Enter' || e.code === 'NumpadEnter' || e.key === 'Enter';
+
+      if (onLauncher && (isArrow || isActivate)) {
+        if (isActivate) {
+          const active = document.activeElement as HTMLElement | null;
+          const target =
+            (active?.classList.contains('launcher-focusable') ? active : null) ||
+            (active?.closest('.launcher-focusable') as HTMLElement | null);
+          e.preventDefault();
+          e.stopPropagation();
+          if (target) target.click();
+          else moveLauncherFocus('down'); // seed focus if nothing selected
+          return;
+        }
+        if (isArrow) {
+          e.preventDefault();
+          e.stopPropagation();
+          const dir =
+            e.code === 'ArrowUp' || e.key === 'ArrowUp'
+              ? 'up'
+              : e.code === 'ArrowDown' || e.key === 'ArrowDown'
+                ? 'down'
+                : e.code === 'ArrowLeft' || e.key === 'ArrowLeft'
+                  ? 'left'
+                  : 'right';
+          moveLauncherFocus(dir);
+          return;
+        }
+      }
+
       const mapped = KEY_MAP[e.code] ?? KEY_MAP[e.key];
       if (mapped != null) {
+        // On launcher, don't steal Escape/Backspace for ADB unless stream is open
+        if (onLauncher && (mapped === 4 || mapped === 67 || mapped === 3 || mapped === 61)) {
+          return;
+        }
         console.log(`[Input]: ${e.code}/${e.key} -> Android Keycode: ${mapped}`);
         e.preventDefault();
         e.stopPropagation();
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          wsRef.current.send(
-            JSON.stringify({
-              type: 'key',
-              keyCode: mapped,
-            })
-          );
+          wsRef.current.send(JSON.stringify({ type: 'key', keyCode: mapped }));
         }
       } else if (e.key.length === 1 && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        // Standard typing from Bluetooth keyboards
-        wsRef.current.send(
-          JSON.stringify({
-            type: 'text',
-            text: e.key,
-          })
-        );
+        if (onLauncher) return;
+        wsRef.current.send(JSON.stringify({ type: 'text', text: e.key }));
       }
     };
 
@@ -338,10 +460,9 @@ export default function Home() {
         if (document.activeElement === iframeRef.current) {
           (document.activeElement as HTMLElement | null)?.blur();
         }
-        // Prefer focus on the parent document so TV remotes hit our keydown handler
         window.focus();
       } catch {
-        /* ignore cross-origin */
+        /* ignore */
       }
     };
 
@@ -362,7 +483,7 @@ export default function Home() {
     };
   }, []);
 
-  // 3. Bluetooth Gamepad / Controller API Polling
+  // Gamepad polling
   useEffect(() => {
     const handleGamepadConnected = (e: GamepadEvent) => {
       console.log('Gamepad connected:', e.gamepad.id);
@@ -372,7 +493,6 @@ export default function Home() {
     };
 
     const handleGamepadDisconnected = () => {
-      console.log('Gamepad disconnected');
       setGamepadConnected(false);
       setIsPlaystationController(false);
     };
@@ -381,7 +501,6 @@ export default function Home() {
     window.addEventListener('gamepaddisconnected', handleGamepadDisconnected);
 
     let animationFrameId: number;
-
     const DEADZONE = 0.5;
     const sendPadKey = (androidKey: number) => {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -406,7 +525,6 @@ export default function Home() {
           pressedMap[stateKey] = btn.pressed;
         });
 
-        // Axes: left stick (0/1) or hat (6/7) -> D-pad with deadzone
         const axes = gp.axes || [];
         const readAxis = (idx: number) => (idx < axes.length ? axes[idx] : 0);
         let ax = readAxis(0);
@@ -439,7 +557,6 @@ export default function Home() {
     };
   }, []);
 
-  // 4. Voice Command / Speech-to-Text Support
   const toggleVoiceCommand = () => {
     const SpeechRecognition =
       (window as unknown as { SpeechRecognition?: new () => ISpeechRecognition; webkitSpeechRecognition?: new () => ISpeechRecognition }).SpeechRecognition ||
@@ -466,14 +583,8 @@ export default function Home() {
       setVoiceText(spokenText);
       console.log('[Voice Command]:', spokenText);
 
-      // Send spoken text directly to Android app
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(
-          JSON.stringify({
-            type: 'text',
-            text: spokenText,
-          })
-        );
+        wsRef.current.send(JSON.stringify({ type: 'text', text: spokenText }));
       }
     };
 
@@ -527,166 +638,154 @@ export default function Home() {
     }
   };
 
+  const goLauncher = () => {
+    setIsFullScreen(false);
+    setStreamUrl(null);
+    setShowRemote(false);
+  };
+
+  const dockItems = useMemo(
+    () => [
+      {
+        id: 'launcher',
+        label: 'Launcher',
+        icon: '🏠',
+        active: streamUrl == null,
+        onClick: goLauncher,
+      },
+      {
+        id: 'stream',
+        label: 'Stream',
+        icon: '📺',
+        active: streamUrl != null,
+        onClick: () => openStream(),
+      },
+      {
+        id: 'files',
+        label: 'Files',
+        icon: '📁',
+        active: showUploads && streamUrl == null,
+        onClick: () => {
+          if (streamUrl) goLauncher();
+          setShowUploads(true);
+          setTimeout(() => {
+            uploadsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 50);
+        },
+      },
+      {
+        id: 'settings',
+        label: 'Settings',
+        icon: '⚙️',
+        onClick: () => setSettingsOpen(true),
+      },
+      {
+        id: 'remote',
+        label: 'Remote',
+        icon: '🎮',
+        active: showRemote,
+        onClick: () => {
+          setShowRemote((v) => {
+            const next = !v;
+            if (next) {
+              setTimeout(() => {
+                remoteSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }, 50);
+            }
+            return next;
+          });
+        },
+      },
+      {
+        id: 'voice',
+        label: isListeningVoice ? 'Listening' : 'Voice',
+        icon: isListeningVoice ? '🔴' : '🎤',
+        active: isListeningVoice,
+        onClick: toggleVoiceCommand,
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [streamUrl, showUploads, showRemote, isListeningVoice]
+  );
+
   return (
-    <div className="min-h-screen text-white flex flex-col items-center justify-between p-6 select-none">
-      {/* Umbrel OS Top Navigation Bar */}
-      <header className="w-full max-w-6xl flex justify-between items-center py-3.5 px-6 umbrel-glass-dock rounded-2xl border border-slate-700/40 shadow-2xl">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center text-base font-black shadow-lg">
+    <div className="umbrel-desktop text-white flex flex-col items-center select-none">
+      {/* Compact status strip */}
+      <header className="w-full max-w-5xl flex justify-between items-center pt-5 px-4">
+        <div className="flex items-center gap-2.5">
+          <div className="umbrel-greeting-mark" aria-hidden>
             ☂️
           </div>
-          <span className="text-sm font-black tracking-widest text-slate-100 uppercase">umbrellaOS</span>
+          <span className="text-xs font-bold tracking-[0.2em] text-white/90 uppercase">umbrellaOS</span>
         </div>
-
-        {/* Status Indicators Badge Bar */}
-        <div className="flex items-center gap-2.5">
-          <span className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition ${
-            adbHealthy ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300' : 'bg-amber-950/70 border-amber-500/50 text-amber-300'
-          }`}>
-            {adbHealthy ? '🤖 Android Online' : '⚠️ ADB Connecting...'}
-          </span>
-
-          <span className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition ${
-            wsConnected ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300' : 'bg-rose-950/70 border-rose-500/50 text-rose-300'
-          }`}>
-            {wsConnected ? '● Controller Active' : '○ Offline'}
-          </span>
-
-          <span className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition ${
-            gamepadConnected ? 'bg-indigo-950/70 border-indigo-500/50 text-indigo-300' : 'bg-slate-800/80 border-slate-700/60 text-slate-400'
-          }`}>
-            {gamepadConnected ? '🎮 Gamepad' : '🎮 Gamepad'}
-          </span>
-
-          <button
-            onClick={toggleVoiceCommand}
-            className={`px-3.5 py-1 rounded-full text-[11px] font-semibold border transition-all flex items-center gap-1.5 ${
-              isListeningVoice
-                ? 'bg-rose-600 border-rose-500 text-white animate-pulse shadow-lg'
-                : 'bg-slate-800/80 border-slate-700/60 hover:bg-slate-700/80 text-slate-200'
+        <div className="flex items-center gap-2 text-[11px]">
+          <span
+            className={`px-2.5 py-1 rounded-full border ${
+              adbHealthy
+                ? 'bg-emerald-950/50 border-emerald-500/40 text-emerald-300'
+                : 'bg-amber-950/50 border-amber-500/40 text-amber-300'
             }`}
           >
-            🎤 {isListeningVoice ? 'Listening...' : 'Voice'}
-          </button>
-
+            {adbHealthy ? 'Android Online' : 'ADB…'}
+          </span>
+          <span
+            className={`px-2.5 py-1 rounded-full border ${
+              wsConnected
+                ? 'bg-emerald-950/50 border-emerald-500/40 text-emerald-300'
+                : 'bg-rose-950/50 border-rose-500/40 text-rose-300'
+            }`}
+          >
+            {wsConnected ? 'WS' : 'Offline'}
+          </span>
           {streamUrl && (
-            <div className="flex items-center gap-2">
+            <>
               <button
+                type="button"
                 onClick={() => setStreamFit(streamFit === 'contain' ? 'cover' : 'contain')}
-                className="bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 text-xs px-3.5 py-1 rounded-full font-semibold border border-slate-700/60 transition"
+                className="px-2.5 py-1 rounded-full bg-white/10 border border-white/15 hover:bg-white/15"
               >
-                {streamFit === 'contain' ? '📺 Fit Window' : '📺 Stretch Fill'}
+                {streamFit === 'contain' ? 'Fit' : 'Fill'}
               </button>
               <button
+                type="button"
                 onClick={() => setIsFullScreen(!isFullScreen)}
-                className="umbrel-button-primary text-white text-[11px] px-3.5 py-1 rounded-full font-bold transition"
+                className="px-2.5 py-1 rounded-full umbrel-button-primary text-white font-semibold"
               >
                 {isFullScreen ? 'Minimize' : 'Full Screen'}
               </button>
-            </div>
+            </>
           )}
         </div>
       </header>
 
-      {/* Voice feedback toast */}
       {voiceText && (
-        <div className="w-full max-w-6xl mt-3 px-4 py-2 umbrel-glass-dock border border-indigo-500/40 rounded-xl text-center text-xs font-medium text-indigo-200 shadow-xl">
-          🎙️ Voice Typed: &quot;{voiceText}&quot;
+        <div className="w-full max-w-5xl mt-3 px-4">
+          <div className="px-4 py-2 umbrel-glass-dock rounded-xl text-center text-xs font-medium text-indigo-200">
+            🎙️ Voice: &quot;{voiceText}&quot;
+          </div>
         </div>
       )}
 
-      {/* Main Umbrel OS Desktop Area */}
-      <main className="w-full max-w-6xl flex-1 flex flex-col items-center justify-start my-6 gap-8">
+      <main className="w-full max-w-5xl flex-1 flex flex-col items-center justify-start mt-6 gap-8 px-4">
         {streamUrl ? (
-          /* Stream + always-visible Android nav (Home/Back/Settings) */
-          <div className={`w-full flex flex-col gap-4 ${isFullScreen ? 'fixed inset-0 z-50 bg-slate-950 p-3' : ''}`}>
-            <div className="w-full flex flex-wrap items-center justify-center gap-2 umbrel-glass-dock rounded-2xl px-3 py-2 border border-slate-700/50 pointer-events-auto z-[60]">
-              <button
-                type="button"
-                onClick={() => sendKeyEvent(4)}
-                className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold border border-slate-600"
-              >
+          <div className={`w-full flex flex-col gap-4 ${isFullScreen ? 'fixed inset-0 z-50 bg-slate-950/95 p-3 pb-24' : ''}`}>
+            <div className="w-full flex flex-wrap items-center justify-center gap-2 umbrel-stream-chrome rounded-2xl px-3 py-2 pointer-events-auto z-[60]">
+              <button type="button" onClick={() => sendKeyEvent(4)} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold border border-white/10">
                 ↩️ Back
               </button>
-              <button
-                type="button"
-                onClick={() => sendKeyEvent(3)}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-xs font-bold shadow"
-              >
+              <button type="button" onClick={() => sendKeyEvent(3)} className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-xs font-bold shadow">
                 🏠 Home
               </button>
-              <button
-                type="button"
-                onClick={() => sendKeyEvent(19)}
-                className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold border border-slate-600"
-              >
-                ▲
-              </button>
-              <button
-                type="button"
-                onClick={() => sendKeyEvent(20)}
-                className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold border border-slate-600"
-              >
-                ▼
-              </button>
-              <button
-                type="button"
-                onClick={() => sendKeyEvent(21)}
-                className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold border border-slate-600"
-              >
-                ◄
-              </button>
-              <button
-                type="button"
-                onClick={() => sendKeyEvent(22)}
-                className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold border border-slate-600"
-              >
-                ►
-              </button>
-              <button
-                type="button"
-                onClick={() => sendKeyEvent(66)}
-                className="px-3 py-2 rounded-xl bg-indigo-700/90 hover:bg-indigo-600 text-xs font-bold border border-indigo-500"
-              >
-                OK
-              </button>
-              <button
-                type="button"
-                onClick={() => sendKeyEvent(187)}
-                className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold border border-slate-600"
-              >
-                ▢ Recents
-              </button>
-              <button
-                type="button"
-                onClick={() => handleLaunchPackage('com.android.settings')}
-                className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold border border-slate-600"
-              >
-                ⚙️ Settings
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsFullScreen(false);
-                  setStreamUrl(null);
-                }}
-                className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold border border-slate-600"
-              >
-                📋 Launcher
-              </button>
-              <a
-                href={streamUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="px-3 py-2 rounded-xl bg-emerald-800/80 hover:bg-emerald-700 text-xs font-semibold border border-emerald-600"
-              >
-                ↗ Open stream
-              </a>
-              <button
-                type="button"
-                onClick={() => setIsFullScreen(!isFullScreen)}
-                className="px-3 py-2 rounded-xl umbrel-button-primary text-xs font-bold"
-              >
+              <button type="button" onClick={() => sendKeyEvent(19)} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold border border-white/10">▲</button>
+              <button type="button" onClick={() => sendKeyEvent(20)} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold border border-white/10">▼</button>
+              <button type="button" onClick={() => sendKeyEvent(21)} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold border border-white/10">◄</button>
+              <button type="button" onClick={() => sendKeyEvent(22)} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold border border-white/10">►</button>
+              <button type="button" onClick={() => sendKeyEvent(66)} className="px-3 py-2 rounded-xl bg-indigo-700/90 hover:bg-indigo-600 text-xs font-bold border border-indigo-500">OK</button>
+              <button type="button" onClick={() => sendKeyEvent(187)} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold border border-white/10">▢ Recents</button>
+              <button type="button" onClick={() => handleLaunchPackage('com.android.settings')} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold border border-white/10">⚙️ Settings</button>
+              <button type="button" onClick={goLauncher} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold border border-white/10">📋 Launcher</button>
+              <a href={streamUrl} target="_blank" rel="noreferrer" className="px-3 py-2 rounded-xl bg-emerald-800/80 hover:bg-emerald-700 text-xs font-semibold border border-emerald-600">↗ Open stream</a>
+              <button type="button" onClick={() => setIsFullScreen(!isFullScreen)} className="px-3 py-2 rounded-xl umbrel-button-primary text-xs font-bold">
                 {isFullScreen ? '⬇ Minimize' : '⬆ Full Screen'}
               </button>
             </div>
@@ -696,11 +795,9 @@ export default function Home() {
                 const rect = e.currentTarget.getBoundingClientRect();
                 const xPct = (e.clientX - rect.left) / rect.width;
                 const yPct = (e.clientY - rect.top) / rect.height;
-                const tapX = Math.round(xPct * 1080);
-                const tapY = Math.round(yPct * 1920);
-                sendTouch(tapX, tapY);
+                sendTouch(Math.round(xPct * 1080), Math.round(yPct * 1920));
               }}
-              className={`w-full umbrel-glass-dock rounded-3xl overflow-hidden shadow-2xl border border-slate-700/40 flex flex-col items-center justify-center relative cursor-crosshair ${
+              className={`w-full umbrel-glass-dock rounded-3xl overflow-hidden shadow-2xl flex flex-col items-center justify-center relative cursor-crosshair ${
                 isFullScreen ? 'flex-1 min-h-0 rounded-2xl' : 'h-[620px]'
               }`}
             >
@@ -728,68 +825,63 @@ export default function Home() {
           </div>
         ) : (
           <>
-            {/* Desktop Greeting Header & System Status Widgets */}
-            <div className="w-full flex flex-col md:flex-row items-start md:items-center justify-between gap-6 pt-4">
-              <div>
-                <h1 className="text-4xl font-extrabold text-white tracking-tight drop-shadow-md">
-                  Good afternoon.
-                </h1>
-                <p className="text-slate-300 text-sm mt-1 drop-shadow">
-                  Welcome to your Umbrella OS Cloud Android Station.
-                </p>
+            {/* Centered greeting */}
+            <div className="w-full flex flex-col items-center text-center pt-6 pb-2 gap-3">
+              <div className="umbrel-greeting-mark text-lg" aria-hidden>
+                ☂️
               </div>
-
-              {/* Umbrel Desktop System Widgets */}
-              <div className="flex items-center gap-4">
-                {/* System Storage Widget */}
-                <div className="umbrel-widget p-4 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-lg">
-                    💾
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Container</p>
-                    <p className="text-sm font-bold text-slate-100">{installedPackages.length} Apps Installed</p>
-                  </div>
-                </div>
-
-                {/* System Status Widget */}
-                <div className="umbrel-widget p-4 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-lg">
-                    ⚡
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400">ADB Status</p>
-                    <p className="text-sm font-bold text-slate-100">{adbHealthy ? 'Connected (5555)' : 'Connecting...'}</p>
-                  </div>
-                </div>
-              </div>
+              <p className="text-sm text-white/60 font-medium tracking-wide">{clockLabel}</p>
+              <h1 className="text-4xl sm:text-5xl font-bold text-white tracking-tight drop-shadow-lg">
+                {greeting}, Justice.
+              </h1>
+              <p className="text-sm text-white/55 max-w-md">
+                Your umbrellaOS cloud Android station
+              </p>
             </div>
 
-            {/* Apps: installed on device vs APK files waiting to install */}
-            <div className="w-full mt-4 space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xs font-bold uppercase tracking-widest text-slate-300 drop-shadow">
-                  On device ({installedPackages.length})
+            <WidgetRow
+              adbHealthy={adbHealthy}
+              installedCount={installedPackages.length}
+              uploadedCount={uploadedApps.length}
+              wsConnected={wsConnected}
+              gamepadConnected={gamepadConnected}
+            />
+
+            {/* App icon grid */}
+            <div className="w-full mt-2 space-y-4">
+              <div className="flex items-center justify-between px-1">
+                <h2 className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/55">
+                  Apps · {installedPackages.length}
                 </h2>
                 <button
+                  type="button"
                   onClick={fetchApps}
-                  className="text-xs px-3 py-1 rounded-xl bg-slate-900/60 hover:bg-slate-800/80 text-slate-300 border border-slate-700/50 transition"
+                  tabIndex={0}
+                  className="launcher-focusable text-xs px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-white/80 border border-white/10 transition focus-visible:ring-2 focus-visible:ring-white"
                 >
-                  🔄 {loadingApps ? 'Refreshing...' : 'Refresh'}
+                  {loadingApps ? 'Refreshing…' : 'Refresh'}
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-6">
-                <label className="flex flex-col items-center gap-2 cursor-pointer group">
-                  <div className={`w-20 h-20 umbrel-app-icon rounded-3xl flex items-center justify-center text-3xl transition-all ${
-                    isLaunching ? 'animate-pulse bg-indigo-600/50' : 'group-hover:scale-105'
-                  }`}>
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-x-6 gap-y-8 justify-items-center">
+                <button
+                  type="button"
+                  tabIndex={0}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="launcher-focusable flex flex-col items-center gap-2.5 cursor-pointer group outline-none"
+                >
+                  <div
+                    className={`w-[4.75rem] h-[4.75rem] umbrel-app-icon rounded-[1.35rem] flex items-center justify-center text-3xl ${
+                      isLaunching ? 'animate-pulse bg-indigo-600/40' : 'bg-gradient-to-tr from-white/20 to-white/5'
+                    }`}
+                  >
                     {isLaunching ? '⏳' : '➕'}
                   </div>
-                  <span className="text-xs font-semibold text-slate-200 truncate group-hover:text-white transition">
-                    {isLaunching ? 'Installing...' : 'Install APK'}
+                  <span className="text-xs font-semibold text-white/90 truncate max-w-[96px]">
+                    {isLaunching ? 'Installing…' : 'Install APK'}
                   </span>
                   <input
+                    ref={fileInputRef}
                     type="file"
                     accept=".apk"
                     onChange={(e) => {
@@ -799,86 +891,111 @@ export default function Home() {
                     }}
                     className="hidden"
                   />
-                </label>
+                </button>
 
                 {installedPackages.length === 0 && !isLaunching && (
-                  <p className="col-span-full text-xs text-slate-400">
-                    No third-party apps on the emulator yet. Upload an APK, or open the Android app drawer on the stream after install succeeds.
+                  <p className="col-span-full text-xs text-white/45 text-center py-2">
+                    No third-party apps yet. Install an APK to populate the grid.
                   </p>
                 )}
 
                 {installedPackages.map((app, idx) => (
-                  <div
+                  <button
                     key={`pkg-${app.packageName || idx}`}
-                    onClick={() => app.packageName && handleLaunchPackage(app.packageName)}
-                    className="flex flex-col items-center gap-2 cursor-pointer group"
+                    type="button"
+                    tabIndex={0}
                     title={app.packageName}
+                    onClick={() => app.packageName && handleLaunchPackage(app.packageName)}
+                    className="launcher-focusable flex flex-col items-center gap-2.5 cursor-pointer group outline-none"
                   >
-                    <div className="w-20 h-20 umbrel-app-icon rounded-3xl flex items-center justify-center text-3xl group-hover:scale-105 transition-all bg-gradient-to-tr from-emerald-600/40 to-teal-600/40">
+                    <div
+                      className={`w-[4.75rem] h-[4.75rem] umbrel-app-icon rounded-[1.35rem] flex items-center justify-center text-3xl bg-gradient-to-tr ${
+                        APP_ICON_COLORS[idx % APP_ICON_COLORS.length]
+                      }`}
+                    >
                       🤖
                     </div>
-                    <span className="text-xs font-semibold text-slate-200 truncate max-w-[90px] group-hover:text-white transition">
+                    <span className="text-xs font-semibold text-white/90 truncate max-w-[96px]">
                       {app.name}
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
+            </div>
 
-              <div>
-                <h2 className="text-xs font-bold uppercase tracking-widest text-slate-300 drop-shadow mb-2">
-                  APK files on server ({uploadedApps.length})
-                </h2>
-                <p className="text-[11px] text-slate-400 mb-4">
-                  These are uploaded <span className="font-mono">.apk</span> files — not launcher icons. Tap one to install/reinstall on the emulator. They only move to &quot;On device&quot; after ADB install succeeds.
-                </p>
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-6">
-                  {uploadedApps.map((app, idx) => (
-                    <div
-                      key={`apk-${app.filename || idx}`}
-                      onClick={() => app.filename && handleLaunchUploadedApk(app.filename)}
-                      className="flex flex-col items-center gap-2 cursor-pointer group"
-                    >
-                      <div className="w-20 h-20 umbrel-app-icon rounded-3xl flex items-center justify-center text-3xl group-hover:scale-105 transition-all bg-gradient-to-tr from-indigo-600/40 to-violet-600/40">
-                        📦
-                      </div>
-                      <span className="text-xs font-semibold text-slate-200 truncate max-w-[90px] group-hover:text-white transition">
-                        {app.name}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            {/* Quieter APK uploads section */}
+            <div
+              ref={uploadsSectionRef}
+              className={`w-full umbrel-section-quiet pt-2 ${showUploads ? '' : ''}`}
+            >
+              <button
+                type="button"
+                onClick={() => setShowUploads((v) => !v)}
+                className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-white/45 hover:text-white/70 mb-3"
+              >
+                <span>APK files on server · {uploadedApps.length}</span>
+                <span className="text-white/30">{showUploads ? '▾' : '▸'}</span>
+              </button>
 
-              {uploadStatus && (
-                <div className="mt-2 p-3 umbrel-widget rounded-2xl w-full text-left">
-                  <p className="text-xs font-mono text-emerald-400">➜ {uploadStatus}</p>
-                </div>
+              {showUploads && (
+                <>
+                  <p className="text-[11px] text-white/40 mb-4 max-w-2xl">
+                    Uploaded <span className="font-mono">.apk</span> files — tap to install on the emulator.
+                    They appear under Apps after ADB install succeeds.
+                  </p>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-x-6 gap-y-8 justify-items-center opacity-90">
+                    {uploadedApps.length === 0 && (
+                      <p className="col-span-full text-xs text-white/40">No APK uploads yet.</p>
+                    )}
+                    {uploadedApps.map((app, idx) => (
+                      <button
+                        key={`apk-${app.filename || idx}`}
+                        type="button"
+                        tabIndex={0}
+                        onClick={() => app.filename && handleLaunchUploadedApk(app.filename)}
+                        className="launcher-focusable flex flex-col items-center gap-2.5 cursor-pointer group outline-none"
+                      >
+                        <div className="w-[4.25rem] h-[4.25rem] umbrel-app-icon rounded-[1.2rem] flex items-center justify-center text-2xl bg-gradient-to-tr from-indigo-600/35 to-violet-600/30">
+                          📦
+                        </div>
+                        <span className="text-[11px] font-medium text-white/75 truncate max-w-[90px]">
+                          {app.name}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
 
-            {/* Virtual D-Pad Controller Widget */}
-            <div className="mt-4 flex justify-center w-full">
-              <VirtualRemote
-                isPlaystationControllerConnected={isPlaystationController}
-                onSendKeyEvent={sendKeyEvent}
-              />
-            </div>
+            {uploadStatus && (
+              <div className="p-3 umbrel-widget rounded-2xl w-full text-left">
+                <p className="text-xs font-mono text-emerald-400">➜ {uploadStatus}</p>
+              </div>
+            )}
+
+            {showRemote && (
+              <div ref={remoteSectionRef} className="mt-2 flex justify-center w-full pb-4">
+                <VirtualRemote
+                  isPlaystationControllerConnected={isPlaystationController}
+                  onSendKeyEvent={sendKeyEvent}
+                />
+              </div>
+            )}
           </>
         )}
       </main>
 
-      {/* Umbrel OS Dock Footer */}
-      <footer className="w-full max-w-2xl py-3 px-6 umbrel-glass-dock rounded-full border border-slate-700/50 shadow-2xl flex items-center justify-around text-slate-300 text-xs">
-        <span className="flex items-center gap-1.5 font-medium">🎮 Controls</span>
-        <span className="text-slate-600">•</span>
-        <span>📺 D-Pad / OK / Back</span>
-        <span className="text-slate-600">•</span>
-        <span>⌨️ Keyboard</span>
-        <span className="text-slate-600">•</span>
-        <span>🕹️ Gamepad</span>
-        <span className="text-slate-600">•</span>
-        <span>🎙️ Voice</span>
-      </footer>
+      <DesktopDock items={dockItems} />
+
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        adbHealthy={adbHealthy}
+        onRefreshApps={() => {
+          fetchApps();
+        }}
+      />
     </div>
   );
 }
