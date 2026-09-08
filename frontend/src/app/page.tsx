@@ -95,6 +95,7 @@ const APP_ICON_COLORS = [
 
 export default function Home() {
   const [uploadStatus, setUploadStatus] = useState<string>('');
+  const [statusDismissed, setStatusDismissed] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -167,6 +168,7 @@ export default function Home() {
   };
 
   const openStream = (url?: string | null) => {
+    // Always prefer same-origin noVNC with resize=scale so remote fills the iframe.
     const remoteNovnc =
       typeof window !== 'undefined'
         ? `${window.location.origin}/novnc/vnc.html?autoconnect=1&resize=scale&reconnect=1&show_dot=0`
@@ -175,20 +177,17 @@ export default function Home() {
     if (typeof window !== 'undefined') {
       const host = window.location.hostname;
       if (host !== 'localhost' && host !== '127.0.0.1') {
-        if (
-          !next ||
-          next.includes(':6080') ||
-          next === 'http://localhost:6080' ||
-          next.endsWith('/novnc/') ||
-          next.endsWith('/novnc')
-        ) {
-          next = remoteNovnc;
-        }
+        // Normalize ANY remote stream to scaled noVNC (critical for fullscreen feel)
+        next = remoteNovnc;
+      } else if (next && next.includes('/novnc') && !next.includes('resize=')) {
+        const join = next.includes('?') ? '&' : '?';
+        next = `${next}${join}autoconnect=1&resize=scale&reconnect=1&show_dot=0`;
       }
     }
     setStreamUrl(next);
     setIsFullScreen(true);
     setShowRemote(false);
+    setStatusDismissed(false);
   };
 
   const fetchApps = useCallback(async () => {
@@ -263,7 +262,13 @@ export default function Home() {
       openStream(data.streamUrl);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Launch failed';
-      setUploadStatus(`Error: ${errorMessage}`);
+      if (/not fully booted/i.test(errorMessage)) {
+        setUploadStatus('Starting Android…');
+        openStream();
+      } else {
+        setUploadStatus(errorMessage);
+        setStatusDismissed(false);
+      }
     } finally {
       setIsLaunching(false);
     }
@@ -291,7 +296,13 @@ export default function Home() {
       fetchApps();
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Launch failed';
-      setUploadStatus(`Error: ${errorMessage}`);
+      if (/not fully booted/i.test(errorMessage)) {
+        setUploadStatus('Starting Android…');
+        openStream();
+      } else {
+        setUploadStatus(errorMessage);
+        setStatusDismissed(false);
+      }
     } finally {
       setIsLaunching(false);
     }
@@ -632,7 +643,13 @@ export default function Home() {
       fetchApps();
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      setUploadStatus(`Error: ${errorMessage}`);
+      if (/not fully booted/i.test(errorMessage)) {
+        setUploadStatus('Starting Android…');
+        openStream();
+      } else {
+        setUploadStatus(errorMessage);
+        setStatusDismissed(false);
+      }
     } finally {
       setIsLaunching(false);
     }
@@ -759,21 +776,23 @@ export default function Home() {
                 const yPct = (e.clientY - rect.top) / rect.height;
                 sendTouch(Math.round(xPct * 1080), Math.round(yPct * 1920));
               }}
-              className="flex-1 min-h-0 w-full relative cursor-crosshair"
+              className="absolute inset-0 w-full h-full cursor-crosshair"
             >
               <iframe
                 ref={iframeRef}
                 src={streamUrl}
                 tabIndex={-1}
-                className="absolute inset-0 w-full h-full border-0 pointer-events-none"
+                className="block w-full h-full border-0 pointer-events-none"
+                style={{ width: '100%', height: '100%', border: 'none' }}
                 title="Umbrella Android Cloud Display"
                 allow="autoplay; fullscreen; microphone"
               />
             </div>
 
-            {uploadStatus && (
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[55] px-4 py-2 umbrel-glass-dock rounded-full text-[11px] font-mono text-emerald-300 max-w-[90vw] truncate">
-                ➜ {uploadStatus}
+            {uploadStatus && !statusDismissed && !/^Error:.*not ful/i.test(uploadStatus) && (
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[55] px-3 py-1.5 umbrel-glass-dock rounded-full text-[11px] font-mono text-white/80 max-w-[85vw] flex items-center gap-2">
+                <span className="truncate">{uploadStatus.replace(/^Error:\s*/i, '')}</span>
+                <button type="button" onClick={() => setStatusDismissed(true)} className="shrink-0 text-white/50 hover:text-white" aria-label="Dismiss">✕</button>
               </div>
             )}
 
@@ -787,27 +806,15 @@ export default function Home() {
                   />
                 </div>
               )}
-              <div className="umbrel-dock-pill px-2.5 py-2 flex items-center gap-1.5">
-                <button type="button" onClick={goLauncher} title="Launcher" className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 text-sm font-bold border border-white/10">🏠</button>
-                <button type="button" onClick={() => sendKeyEvent(4)} title="Back" className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 text-sm font-semibold border border-white/10">↩️</button>
-                <button type="button" onClick={() => sendKeyEvent(3)} title="Home" className="w-10 h-10 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-sm font-bold shadow">⌂</button>
-                <div className="flex items-center gap-0.5 mx-0.5">
-                  <button type="button" onClick={() => sendKeyEvent(21)} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-xs border border-white/10">◄</button>
-                  <div className="flex flex-col gap-0.5">
-                    <button type="button" onClick={() => sendKeyEvent(19)} className="w-8 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] border border-white/10">▲</button>
-                    <button type="button" onClick={() => sendKeyEvent(20)} className="w-8 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] border border-white/10">▼</button>
-                  </div>
-                  <button type="button" onClick={() => sendKeyEvent(22)} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-xs border border-white/10">►</button>
-                </div>
-                <button type="button" onClick={() => sendKeyEvent(66)} title="OK" className="w-10 h-10 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-xs font-bold border border-indigo-400/50">OK</button>
-                <button
-                  type="button"
-                  onClick={() => setShowRemote((v) => !v)}
-                  title="Remote"
-                  className={`w-10 h-10 rounded-xl text-sm border border-white/10 ${showRemote ? 'bg-violet-600/80' : 'bg-white/10 hover:bg-white/20'}`}
-                >
-                  🎮
-                </button>
+              <div className="umbrel-dock-pill px-2 py-1.5 flex items-center gap-1">
+                <button type="button" onClick={goLauncher} title="Launcher" className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-sm border border-white/10">🏠</button>
+                <button type="button" onClick={() => sendKeyEvent(4)} title="Back" className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-sm border border-white/10">↩️</button>
+                <button type="button" onClick={() => sendKeyEvent(3)} title="Home" className="w-9 h-9 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-sm font-bold">⌂</button>
+                <button type="button" onClick={() => sendKeyEvent(19)} className="w-7 h-7 rounded-lg bg-white/10 text-[10px] border border-white/10">▲</button>
+                <button type="button" onClick={() => sendKeyEvent(20)} className="w-7 h-7 rounded-lg bg-white/10 text-[10px] border border-white/10">▼</button>
+                <button type="button" onClick={() => sendKeyEvent(21)} className="w-7 h-7 rounded-lg bg-white/10 text-[10px] border border-white/10">◄</button>
+                <button type="button" onClick={() => sendKeyEvent(22)} className="w-7 h-7 rounded-lg bg-white/10 text-[10px] border border-white/10">►</button>
+                <button type="button" onClick={() => sendKeyEvent(66)} title="OK" className="w-9 h-9 rounded-xl bg-indigo-600/90 text-xs font-bold">OK</button>
               </div>
             </div>
           </div>

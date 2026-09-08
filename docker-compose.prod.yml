@@ -25,16 +25,16 @@ services:
       APPIUM: "false"
       WEB_VNC: "true"
       WEB_LOG: "false"
-      # Match VNC framebuffer to the no-skin Emulator window (~360x640)
-      # so Android fills noVNC (1600x900 left a tiny phone on green desktop)
-      SCREEN_WIDTH: "360"
-      SCREEN_HEIGHT: "640"
+      # Phone-shaped VNC; fill-emulator-window.sh maximizes Emulator to cover it.
+      # noVNC resize=scale then scales this up to fill the browser viewport.
+      SCREEN_WIDTH: "720"
+      SCREEN_HEIGHT: "1280"
 
   backend:
     ports: !reset []
     environment:
-      STREAM_URL: /novnc/
-      PUBLIC_STREAM_URL: /novnc/
+      STREAM_URL: /novnc/vnc.html?autoconnect=1&resize=scale&reconnect=1&show_dot=0
+      PUBLIC_STREAM_URL: /novnc/vnc.html?autoconnect=1&resize=scale&reconnect=1&show_dot=0
       ANDROID_HOST: android
       ANDROID_ADB_PORT: "5555"
 

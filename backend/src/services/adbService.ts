@@ -68,13 +68,17 @@ export class AdbService {
         };
       }
 
-      const booted = await this.isBootCompleted();
+      // Wait briefly for boot; if adb already reports "device", proceed anyway
+      // (sys.boot_completed can lag while the emulator is usable).
+      let booted = await this.isBootCompleted();
       if (!booted) {
-        return {
-          success: false,
-          message:
-            'Android emulator is connected but not fully booted yet (sys.boot_completed != 1). Wait and retry.',
-        };
+        for (let i = 0; i < 6 && !booted; i++) {
+          await new Promise((r) => setTimeout(r, 2500));
+          booted = await this.isBootCompleted();
+        }
+        if (!booted) {
+          console.warn('[ADB] sys.boot_completed still 0 — continuing install (device is connected)');
+        }
       }
 
       console.log(`[ADB] Installing APK from ${apkPath}...`);
