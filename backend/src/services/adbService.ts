@@ -108,6 +108,7 @@ export class AdbService {
 
   static async sendKeyEvent(keyCode: number): Promise<boolean> {
     try {
+      await this.connect();
       await execAdb(`adb -s ${this.targetDevice} shell input keyevent ${keyCode}`, 15_000);
       return true;
     } catch (err: any) {
