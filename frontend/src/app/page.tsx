@@ -17,6 +17,9 @@ const KEY_MAP: Record<string, number> = {
   Space: 62,        // SPACE
   Backspace: 67,    // DEL / BACKSPACE
   Escape: 4,        // BACK
+  BrowserBack: 4,   // Hisense / TV BrowserBack
+  GoBack: 4,
+  Back: 4,
   Home: 3,          // HOME
   KeyH: 3,          // HOME shortcut
   Tab: 61,          // TAB
@@ -25,6 +28,9 @@ const KEY_MAP: Record<string, number> = {
   MediaPlayPause: 85,
   MediaFastForward: 90,
   MediaRewind: 89,
+  MediaPlay: 126,
+  MediaPause: 127,
+  MediaStop: 86,
 };
 
 // Gamepad Button Map to Android Keycodes
@@ -111,18 +117,29 @@ export default function Home() {
   };
 
   const openStream = (url?: string | null) => {
-    // Prefer same-origin /novnc/ on remote hosts (Caddy). Absolute :6080 often isn't published.
+    // Prefer same-origin autoconnect noVNC on remote hosts (Caddy). Absolute :6080 often isn't published.
+    const remoteNovnc =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}/novnc/vnc.html?autoconnect=1&resize=scale&reconnect=1&show_dot=0`
+        : '/novnc/vnc.html?autoconnect=1&resize=scale&reconnect=1&show_dot=0';
     let next = url || getDefaultStreamUrl();
     if (typeof window !== 'undefined') {
       const host = window.location.hostname;
       if (host !== 'localhost' && host !== '127.0.0.1') {
-        if (!next || next.includes(':6080') || next === 'http://localhost:6080') {
-          next = `${window.location.origin}/novnc/`;
+        if (
+          !next ||
+          next.includes(':6080') ||
+          next === 'http://localhost:6080' ||
+          next.endsWith('/novnc/') ||
+          next.endsWith('/novnc')
+        ) {
+          next = remoteNovnc;
         }
       }
     }
     setStreamUrl(next);
-    setIsFullScreen(true);
+    // Keep VirtualRemote visible after launch (fullscreen hid remotes before).
+    setIsFullScreen(false);
   };
 
   const [voiceText, setVoiceText] = useState('');
@@ -131,7 +148,9 @@ export default function Home() {
   const [loadingApps, setLoadingApps] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const lastButtonStateRef = useRef<Record<number, boolean>>({});
+  const lastAxisStateRef = useRef<Record<string, boolean>>({});
 
   const fetchApps = useCallback(async () => {
     setLoadingApps(true);
@@ -243,40 +262,62 @@ export default function Home() {
     }
   };
 
-  // 1. Initialize WebSocket for real-time TV remote / controller input
+  // 1. Initialize WebSocket for real-time TV remote / controller input (reconnect w/ backoff)
   useEffect(() => {
-    const wsUrl = getWsUrl();
-    const ws = new WebSocket(wsUrl);
+    let cancelled = false;
+    let retryMs = 1000;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let ws: WebSocket | null = null;
 
-    ws.onopen = () => {
-      console.log('Connected to Umbrella OS Controller WebSocket');
-      setWsConnected(true);
+    const connectWs = () => {
+      if (cancelled) return;
+      const wsUrl = getWsUrl();
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log('Connected to Umbrella OS Controller WebSocket');
+        setWsConnected(true);
+        retryMs = 1000;
+      };
+
+      ws.onclose = () => {
+        console.log('Disconnected from Umbrella OS Controller WebSocket');
+        setWsConnected(false);
+        if (cancelled) return;
+        reconnectTimer = setTimeout(() => {
+          retryMs = Math.min(retryMs * 2, 15000);
+          connectWs();
+        }, retryMs);
+      };
+
+      ws.onerror = () => {
+        // onclose will fire and schedule reconnect
+      };
     };
 
-    ws.onclose = () => {
-      console.log('Disconnected from Umbrella OS Controller WebSocket');
-      setWsConnected(false);
-    };
-
-    const ref = wsRef;
-    ref.current = ws;
+    connectWs();
 
     return () => {
-      ws.close();
+      cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws?.close();
     };
   }, []);
 
-  // 2. Listen to TV Remote & Bluetooth Keyboard events
+  // 2. Listen to TV Remote & Bluetooth Keyboard events (capture so Hisense keys beat iframe focus)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (KEY_MAP[e.code]) {
-        console.log(`[Input]: ${e.code} -> Android Keycode: ${KEY_MAP[e.code]}`);
-        
+      const mapped = KEY_MAP[e.code] ?? KEY_MAP[e.key];
+      if (mapped != null) {
+        console.log(`[Input]: ${e.code}/${e.key} -> Android Keycode: ${mapped}`);
+        e.preventDefault();
+        e.stopPropagation();
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           wsRef.current.send(
             JSON.stringify({
               type: 'key',
-              keyCode: KEY_MAP[e.code],
+              keyCode: mapped,
             })
           );
         }
@@ -291,8 +332,34 @@ export default function Home() {
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    const blurIframe = () => {
+      try {
+        iframeRef.current?.blur();
+        if (document.activeElement === iframeRef.current) {
+          (document.activeElement as HTMLElement | null)?.blur();
+        }
+        // Prefer focus on the parent document so TV remotes hit our keydown handler
+        window.focus();
+      } catch {
+        /* ignore cross-origin */
+      }
+    };
+
+    const handleFocusIn = (e: FocusEvent) => {
+      const t = e.target as Node | null;
+      if (t && iframeRef.current && (t === iframeRef.current || iframeRef.current.contains(t))) {
+        blurIframe();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    window.addEventListener('focusin', handleFocusIn, true);
+    const interval = setInterval(blurIframe, 1500);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+      window.removeEventListener('focusin', handleFocusIn, true);
+      clearInterval(interval);
+    };
   }, []);
 
   // 3. Bluetooth Gamepad / Controller API Polling
@@ -315,26 +382,49 @@ export default function Home() {
 
     let animationFrameId: number;
 
+    const DEADZONE = 0.5;
+    const sendPadKey = (androidKey: number) => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'key', keyCode: androidKey }));
+      }
+    };
+
     const pollGamepad = () => {
       const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
-      const gp = gamepads[0];
+      const pressedMap = lastButtonStateRef.current as unknown as Record<string, boolean>;
 
-      if (gp && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      for (const gp of gamepads) {
+        if (!gp || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) continue;
+
         gp.buttons.forEach((btn, idx) => {
-          const wasPressed = lastButtonStateRef.current[idx] || false;
-          if (btn.pressed && !wasPressed) {
+          const stateKey = `${gp.index}:btn:${idx}`;
+          const was = pressedMap[stateKey] || false;
+          if (btn.pressed && !was) {
             const androidKey = GAMEPAD_BUTTON_MAP[idx];
-            if (androidKey) {
-              wsRef.current?.send(
-                JSON.stringify({
-                  type: 'key',
-                  keyCode: androidKey,
-                })
-              );
-            }
+            if (androidKey) sendPadKey(androidKey);
           }
-          lastButtonStateRef.current[idx] = btn.pressed;
+          pressedMap[stateKey] = btn.pressed;
         });
+
+        // Axes: left stick (0/1) or hat (6/7) -> D-pad with deadzone
+        const axes = gp.axes || [];
+        const readAxis = (idx: number) => (idx < axes.length ? axes[idx] : 0);
+        let ax = readAxis(0);
+        let ay = readAxis(1);
+        if (Math.abs(ax) < DEADZONE && Math.abs(ay) < DEADZONE && axes.length > 7) {
+          ax = readAxis(6);
+          ay = readAxis(7);
+        }
+        const axisState = lastAxisStateRef.current;
+        const setAxis = (name: string, active: boolean, keyCode: number) => {
+          const key = `${gp.index}:axis:${name}`;
+          if (active && !axisState[key]) sendPadKey(keyCode);
+          axisState[key] = active;
+        };
+        setAxis('left', ax < -DEADZONE, 21);
+        setAxis('right', ax > DEADZONE, 22);
+        setAxis('up', ay < -DEADZONE, 19);
+        setAxis('down', ay > DEADZONE, 20);
       }
 
       animationFrameId = requestAnimationFrame(pollGamepad);
@@ -527,6 +617,41 @@ export default function Home() {
               </button>
               <button
                 type="button"
+                onClick={() => sendKeyEvent(19)}
+                className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold border border-slate-600"
+              >
+                ▲
+              </button>
+              <button
+                type="button"
+                onClick={() => sendKeyEvent(20)}
+                className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold border border-slate-600"
+              >
+                ▼
+              </button>
+              <button
+                type="button"
+                onClick={() => sendKeyEvent(21)}
+                className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold border border-slate-600"
+              >
+                ◄
+              </button>
+              <button
+                type="button"
+                onClick={() => sendKeyEvent(22)}
+                className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold border border-slate-600"
+              >
+                ►
+              </button>
+              <button
+                type="button"
+                onClick={() => sendKeyEvent(66)}
+                className="px-3 py-2 rounded-xl bg-indigo-700/90 hover:bg-indigo-600 text-xs font-bold border border-indigo-500"
+              >
+                OK
+              </button>
+              <button
+                type="button"
                 onClick={() => sendKeyEvent(187)}
                 className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-semibold border border-slate-600"
               >
@@ -580,21 +705,21 @@ export default function Home() {
               }`}
             >
               <iframe
+                ref={iframeRef}
                 src={streamUrl}
+                tabIndex={-1}
                 className={`w-full h-full border-0 pointer-events-none ${streamFit === 'cover' ? 'object-cover' : 'object-contain'}`}
                 title="Umbrella Android Cloud Display"
-                allow="autoplay; fullscreen"
+                allow="autoplay; fullscreen; microphone"
               />
             </div>
 
-            {!isFullScreen && (
-              <div className="flex justify-center w-full">
-                <VirtualRemote
-                  isPlaystationControllerConnected={isPlaystationController}
-                  onSendKeyEvent={sendKeyEvent}
-                />
-              </div>
-            )}
+            <div className="flex justify-center w-full pointer-events-auto z-[60]">
+              <VirtualRemote
+                isPlaystationControllerConnected={isPlaystationController}
+                onSendKeyEvent={sendKeyEvent}
+              />
+            </div>
             {uploadStatus && (
               <div className="p-3 umbrel-widget rounded-2xl w-full text-left">
                 <p className="text-xs font-mono text-emerald-400">➜ {uploadStatus}</p>
