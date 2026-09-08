@@ -82,8 +82,9 @@ export class AdbService {
       }
 
       console.log(`[ADB] Installing APK from ${apkPath}...`);
+      // -r replace existing, -d allow version downgrade (INSTALL_FAILED_VERSION_DOWNGRADE)
       const { stdout, stderr } = await execAdb(
-        `adb -s ${this.targetDevice} install -r "${apkPath}"`,
+        `adb -s ${this.targetDevice} install -r -d "${apkPath}"`,
         ADB_TIMEOUT_MS
       );
       const output = `${stdout || ''}${stderr || ''}`.trim();
@@ -101,11 +102,25 @@ export class AdbService {
     } catch (err: any) {
       console.error(`[ADB Install Error]:`, err);
       const timedOut = err.killed || /ETIMEDOUT|TIMEOUT|timed out/i.test(String(err.message));
+      // Prefer full adb stdout/stderr over truncated "Command failed: adb..."
+      const adbOut = [err.stdout, err.stderr]
+        .filter((s: unknown) => typeof s === 'string' && s.trim())
+        .join('\n')
+        .trim();
+      let detail = adbOut || String(err.message || err);
+      // If message is the generic Command failed wrapper, peel stderr from it when present
+      if (!adbOut && typeof err.message === 'string') {
+        const m = err.message.replace(/^Command failed:\s*/i, '').trim();
+        // Drop the echoed command line; keep failure body after first newline
+        const nl = m.indexOf('\n');
+        if (nl >= 0) detail = m.slice(nl + 1).trim() || m;
+        else detail = m;
+      }
       return {
         success: false,
         message: timedOut
           ? `APK install timed out after ${ADB_TIMEOUT_MS / 1000}s. Emulator may still be booting or too slow.`
-          : err.message,
+          : detail,
       };
     }
   }
