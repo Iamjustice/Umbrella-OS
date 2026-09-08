@@ -20,7 +20,7 @@ services:
       - "6080:6080"
     environment:
       DEVICE: Samsung Galaxy S10
-      EMULATOR_ADDITIONAL_ARGS: "-gpu swiftshader_indirect -no-metrics"
+      EMULATOR_ADDITIONAL_ARGS: "-gpu swiftshader_indirect -no-metrics -scale 3"
       EMULATOR_NO_SKIN: "true"
       APPIUM: "false"
       WEB_VNC: "true"
