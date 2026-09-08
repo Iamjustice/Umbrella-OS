@@ -110,6 +110,7 @@ export default function Home() {
   const [adbHealthy, setAdbHealthy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showRemote, setShowRemote] = useState(false);
+  const [streamDockVisible, setStreamDockVisible] = useState(true);
   const [showUploads, setShowUploads] = useState(true);
   const [greeting, setGreeting] = useState('Good afternoon');
   const [clockLabel, setClockLabel] = useState('');
@@ -122,6 +123,7 @@ export default function Home() {
   const uploadsSectionRef = useRef<HTMLDivElement | null>(null);
   const remoteSectionRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const streamDockHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     streamUrlRef.current = streamUrl;
@@ -151,6 +153,25 @@ export default function Home() {
       wsRef.current.send(JSON.stringify({ type: 'touch', x, y }));
     }
   }, []);
+
+  /** Show stream dock; auto-hide after ~3s idle. Edge tab brings it back. */
+  const bumpStreamDock = useCallback(() => {
+    setStreamDockVisible(true);
+    if (streamDockHideTimerRef.current) clearTimeout(streamDockHideTimerRef.current);
+    streamDockHideTimerRef.current = setTimeout(() => setStreamDockVisible(false), 3000);
+  }, []);
+
+  useEffect(() => {
+    if (!streamUrl) {
+      if (streamDockHideTimerRef.current) clearTimeout(streamDockHideTimerRef.current);
+      setStreamDockVisible(true);
+      return;
+    }
+    bumpStreamDock();
+    return () => {
+      if (streamDockHideTimerRef.current) clearTimeout(streamDockHideTimerRef.current);
+    };
+  }, [streamUrl, bumpStreamDock]);
 
   const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 130000) => {
     const controller = new AbortController();
@@ -790,32 +811,54 @@ export default function Home() {
             </div>
 
             {uploadStatus && !statusDismissed && !/^Error:.*not ful/i.test(uploadStatus) && (
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[55] px-3 py-1.5 umbrel-glass-dock rounded-full text-[11px] font-mono text-white/80 max-w-[85vw] flex items-center gap-2">
-                <span className="truncate">{uploadStatus.replace(/^Error:\s*/i, '')}</span>
-                <button type="button" onClick={() => setStatusDismissed(true)} className="shrink-0 text-white/50 hover:text-white" aria-label="Dismiss">✕</button>
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[55] px-3 py-1.5 umbrel-glass-dock rounded-2xl text-[11px] font-mono text-white/80 max-w-[92vw] sm:max-w-xl flex items-start gap-2 shadow-lg">
+                <span className="whitespace-pre-wrap break-words text-left leading-snug">{uploadStatus.replace(/^Error:\s*/i, '')}</span>
+                <button type="button" onClick={() => setStatusDismissed(true)} className="shrink-0 text-white/50 hover:text-white mt-0.5" aria-label="Dismiss">✕</button>
               </div>
             )}
 
-            {/* Minimal floating stream dock */}
-            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[60] flex flex-col items-center gap-2 pointer-events-auto">
-              {showRemote && (
-                <div ref={remoteSectionRef} className="mb-1">
-                  <VirtualRemote
-                    isPlaystationControllerConnected={isPlaystationController}
-                    onSendKeyEvent={sendKeyEvent}
-                  />
+            {/* Minimal floating stream dock — auto-hides after idle; edge tab restores */}
+            <div
+              className="absolute bottom-0 left-0 right-0 z-[60] flex flex-col items-center pointer-events-none"
+              onPointerDown={bumpStreamDock}
+            >
+              {streamDockVisible ? (
+                <div
+                  className="mb-5 flex flex-col items-center gap-2 pointer-events-auto transition-opacity duration-300 opacity-100"
+                  onPointerDown={bumpStreamDock}
+                  onPointerMove={bumpStreamDock}
+                >
+                  {showRemote && (
+                    <div ref={remoteSectionRef} className="mb-1">
+                      <VirtualRemote
+                        isPlaystationControllerConnected={isPlaystationController}
+                        onSendKeyEvent={sendKeyEvent}
+                      />
+                    </div>
+                  )}
+                  <div className="umbrel-dock-pill px-2 py-1.5 flex items-center gap-1">
+                    <button type="button" onClick={goLauncher} title="Launcher" className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-sm border border-white/10">🏠</button>
+                    <button type="button" onClick={() => { bumpStreamDock(); sendKeyEvent(4); }} title="Back" className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-sm border border-white/10">↩️</button>
+                    <button type="button" onClick={() => { bumpStreamDock(); sendKeyEvent(3); }} title="Home" className="w-9 h-9 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-sm font-bold">⌂</button>
+                    <button type="button" onClick={() => { bumpStreamDock(); sendKeyEvent(187); }} title="Recents / Overview" className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-sm border border-white/10 font-bold">▢</button>
+                    <button type="button" onClick={() => { bumpStreamDock(); sendKeyEvent(19); }} className="w-7 h-7 rounded-lg bg-white/10 text-[10px] border border-white/10">▲</button>
+                    <button type="button" onClick={() => { bumpStreamDock(); sendKeyEvent(20); }} className="w-7 h-7 rounded-lg bg-white/10 text-[10px] border border-white/10">▼</button>
+                    <button type="button" onClick={() => { bumpStreamDock(); sendKeyEvent(21); }} className="w-7 h-7 rounded-lg bg-white/10 text-[10px] border border-white/10">◄</button>
+                    <button type="button" onClick={() => { bumpStreamDock(); sendKeyEvent(22); }} className="w-7 h-7 rounded-lg bg-white/10 text-[10px] border border-white/10">►</button>
+                    <button type="button" onClick={() => { bumpStreamDock(); sendKeyEvent(66); }} title="OK" className="w-9 h-9 rounded-xl bg-indigo-600/90 text-xs font-bold">OK</button>
+                  </div>
                 </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={bumpStreamDock}
+                  title="Show controls"
+                  aria-label="Show stream controls"
+                  className="pointer-events-auto mb-1 px-4 py-1.5 rounded-t-xl bg-black/55 border border-white/15 border-b-0 text-white/70 text-[10px] tracking-wide hover:bg-black/70 hover:text-white backdrop-blur-md"
+                >
+                  ▴ controls
+                </button>
               )}
-              <div className="umbrel-dock-pill px-2 py-1.5 flex items-center gap-1">
-                <button type="button" onClick={goLauncher} title="Launcher" className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-sm border border-white/10">🏠</button>
-                <button type="button" onClick={() => sendKeyEvent(4)} title="Back" className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-sm border border-white/10">↩️</button>
-                <button type="button" onClick={() => sendKeyEvent(3)} title="Home" className="w-9 h-9 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-sm font-bold">⌂</button>
-                <button type="button" onClick={() => sendKeyEvent(19)} className="w-7 h-7 rounded-lg bg-white/10 text-[10px] border border-white/10">▲</button>
-                <button type="button" onClick={() => sendKeyEvent(20)} className="w-7 h-7 rounded-lg bg-white/10 text-[10px] border border-white/10">▼</button>
-                <button type="button" onClick={() => sendKeyEvent(21)} className="w-7 h-7 rounded-lg bg-white/10 text-[10px] border border-white/10">◄</button>
-                <button type="button" onClick={() => sendKeyEvent(22)} className="w-7 h-7 rounded-lg bg-white/10 text-[10px] border border-white/10">►</button>
-                <button type="button" onClick={() => sendKeyEvent(66)} title="OK" className="w-9 h-9 rounded-xl bg-indigo-600/90 text-xs font-bold">OK</button>
-              </div>
             </div>
           </div>
         ) : (
