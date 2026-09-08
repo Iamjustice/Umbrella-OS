@@ -107,7 +107,6 @@ export default function Home() {
   const [installedPackages, setInstalledPackages] = useState<AppItem[]>([]);
   const [loadingApps, setLoadingApps] = useState(false);
   const [adbHealthy, setAdbHealthy] = useState(false);
-  const [streamFit, setStreamFit] = useState<'contain' | 'cover'>('contain');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showRemote, setShowRemote] = useState(false);
   const [showUploads, setShowUploads] = useState(true);
@@ -188,7 +187,8 @@ export default function Home() {
       }
     }
     setStreamUrl(next);
-    setIsFullScreen(false);
+    setIsFullScreen(true);
+    setShowRemote(false);
   };
 
   const fetchApps = useCallback(async () => {
@@ -710,8 +710,8 @@ export default function Home() {
 
   return (
     <div className="umbrel-desktop text-white flex flex-col items-center select-none">
-      {/* Compact status strip */}
-      <header className="w-full max-w-5xl flex justify-between items-center pt-5 px-4">
+      {/* Compact status strip — launcher only */}
+      {!streamUrl && <header className="w-full max-w-5xl flex justify-between items-center pt-5 px-4">
         <div className="flex items-center gap-2.5">
           <div className="umbrel-greeting-mark" aria-hidden>
             ☂️
@@ -737,26 +737,8 @@ export default function Home() {
           >
             {wsConnected ? 'WS' : 'Offline'}
           </span>
-          {streamUrl && (
-            <>
-              <button
-                type="button"
-                onClick={() => setStreamFit(streamFit === 'contain' ? 'cover' : 'contain')}
-                className="px-2.5 py-1 rounded-full bg-white/10 border border-white/15 hover:bg-white/15"
-              >
-                {streamFit === 'contain' ? 'Fit' : 'Fill'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsFullScreen(!isFullScreen)}
-                className="px-2.5 py-1 rounded-full umbrel-button-primary text-white font-semibold"
-              >
-                {isFullScreen ? 'Minimize' : 'Full Screen'}
-              </button>
-            </>
-          )}
         </div>
-      </header>
+      </header>}
 
       {voiceText && (
         <div className="w-full max-w-5xl mt-3 px-4">
@@ -768,28 +750,8 @@ export default function Home() {
 
       <main className="w-full max-w-5xl flex-1 flex flex-col items-center justify-start mt-6 gap-8 px-4">
         {streamUrl ? (
-          <div className={`w-full flex flex-col gap-4 ${isFullScreen ? 'fixed inset-0 z-50 bg-slate-950/95 p-3 pb-24' : ''}`}>
-            <div className="w-full flex flex-wrap items-center justify-center gap-2 umbrel-stream-chrome rounded-2xl px-3 py-2 pointer-events-auto z-[60]">
-              <button type="button" onClick={() => sendKeyEvent(4)} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold border border-white/10">
-                ↩️ Back
-              </button>
-              <button type="button" onClick={() => sendKeyEvent(3)} className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-xs font-bold shadow">
-                🏠 Home
-              </button>
-              <button type="button" onClick={() => sendKeyEvent(19)} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold border border-white/10">▲</button>
-              <button type="button" onClick={() => sendKeyEvent(20)} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold border border-white/10">▼</button>
-              <button type="button" onClick={() => sendKeyEvent(21)} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold border border-white/10">◄</button>
-              <button type="button" onClick={() => sendKeyEvent(22)} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold border border-white/10">►</button>
-              <button type="button" onClick={() => sendKeyEvent(66)} className="px-3 py-2 rounded-xl bg-indigo-700/90 hover:bg-indigo-600 text-xs font-bold border border-indigo-500">OK</button>
-              <button type="button" onClick={() => sendKeyEvent(187)} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold border border-white/10">▢ Recents</button>
-              <button type="button" onClick={() => handleLaunchPackage('com.android.settings')} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold border border-white/10">⚙️ Settings</button>
-              <button type="button" onClick={goLauncher} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold border border-white/10">📋 Launcher</button>
-              <a href={streamUrl} target="_blank" rel="noreferrer" className="px-3 py-2 rounded-xl bg-emerald-800/80 hover:bg-emerald-700 text-xs font-semibold border border-emerald-600">↗ Open stream</a>
-              <button type="button" onClick={() => setIsFullScreen(!isFullScreen)} className="px-3 py-2 rounded-xl umbrel-button-primary text-xs font-bold">
-                {isFullScreen ? '⬇ Minimize' : '⬆ Full Screen'}
-              </button>
-            </div>
-
+          <div className="fixed inset-0 z-40 bg-black flex flex-col">
+            {/* Full-bleed Android stream — no dense chrome */}
             <div
               onPointerDown={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
@@ -797,33 +759,60 @@ export default function Home() {
                 const yPct = (e.clientY - rect.top) / rect.height;
                 sendTouch(Math.round(xPct * 1080), Math.round(yPct * 1920));
               }}
-              className={`w-full umbrel-glass-dock rounded-3xl overflow-hidden shadow-2xl flex flex-col items-center justify-center relative cursor-crosshair ${
-                isFullScreen ? 'flex-1 min-h-0 rounded-2xl' : 'h-[620px]'
-              }`}
+              className="flex-1 min-h-0 w-full relative cursor-crosshair"
             >
               <iframe
                 ref={iframeRef}
                 src={streamUrl}
                 tabIndex={-1}
-                className={`w-full h-full border-0 pointer-events-none ${streamFit === 'cover' ? 'object-cover' : 'object-contain'}`}
+                className="absolute inset-0 w-full h-full border-0 pointer-events-none"
                 title="Umbrella Android Cloud Display"
                 allow="autoplay; fullscreen; microphone"
               />
             </div>
 
-            <div className="flex justify-center w-full pointer-events-auto z-[60]">
-              <VirtualRemote
-                isPlaystationControllerConnected={isPlaystationController}
-                onSendKeyEvent={sendKeyEvent}
-              />
-            </div>
             {uploadStatus && (
-              <div className="p-3 umbrel-widget rounded-2xl w-full text-left">
-                <p className="text-xs font-mono text-emerald-400">➜ {uploadStatus}</p>
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[55] px-4 py-2 umbrel-glass-dock rounded-full text-[11px] font-mono text-emerald-300 max-w-[90vw] truncate">
+                ➜ {uploadStatus}
               </div>
             )}
+
+            {/* Minimal floating stream dock */}
+            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[60] flex flex-col items-center gap-2 pointer-events-auto">
+              {showRemote && (
+                <div ref={remoteSectionRef} className="mb-1">
+                  <VirtualRemote
+                    isPlaystationControllerConnected={isPlaystationController}
+                    onSendKeyEvent={sendKeyEvent}
+                  />
+                </div>
+              )}
+              <div className="umbrel-dock-pill px-2.5 py-2 flex items-center gap-1.5">
+                <button type="button" onClick={goLauncher} title="Launcher" className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 text-sm font-bold border border-white/10">🏠</button>
+                <button type="button" onClick={() => sendKeyEvent(4)} title="Back" className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 text-sm font-semibold border border-white/10">↩️</button>
+                <button type="button" onClick={() => sendKeyEvent(3)} title="Home" className="w-10 h-10 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-sm font-bold shadow">⌂</button>
+                <div className="flex items-center gap-0.5 mx-0.5">
+                  <button type="button" onClick={() => sendKeyEvent(21)} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-xs border border-white/10">◄</button>
+                  <div className="flex flex-col gap-0.5">
+                    <button type="button" onClick={() => sendKeyEvent(19)} className="w-8 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] border border-white/10">▲</button>
+                    <button type="button" onClick={() => sendKeyEvent(20)} className="w-8 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] border border-white/10">▼</button>
+                  </div>
+                  <button type="button" onClick={() => sendKeyEvent(22)} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-xs border border-white/10">►</button>
+                </div>
+                <button type="button" onClick={() => sendKeyEvent(66)} title="OK" className="w-10 h-10 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-xs font-bold border border-indigo-400/50">OK</button>
+                <button
+                  type="button"
+                  onClick={() => setShowRemote((v) => !v)}
+                  title="Remote"
+                  className={`w-10 h-10 rounded-xl text-sm border border-white/10 ${showRemote ? 'bg-violet-600/80' : 'bg-white/10 hover:bg-white/20'}`}
+                >
+                  🎮
+                </button>
+              </div>
+            </div>
           </div>
         ) : (
+
           <>
             {/* Centered greeting */}
             <div className="w-full flex flex-col items-center text-center pt-6 pb-2 gap-3">
@@ -986,7 +975,7 @@ export default function Home() {
         )}
       </main>
 
-      <DesktopDock items={dockItems} />
+      {!streamUrl && <DesktopDock items={dockItems} />}
 
       <SettingsModal
         isOpen={settingsOpen}
