@@ -1,0 +1,130 @@
+# Umbrella OS on AWS Graviton (arm64): Redroid 14 + ws-scrcpy, no nested virt.
+# Standalone file (NOT an overlay of docker-compose.yml). See DEPLOY-GRAVITON.md.
+#
+#   cp .env.arm64.example .env   # set UMBRELLA_HOST
+#   docker compose -f docker-compose.arm64.yml build
+#   docker compose -f docker-compose.arm64.yml up -d
+#
+# Host prerequisites: binder_linux loaded and binderfs mounted at /dev/binderfs.
+#
+# ADB topology (as verified on the box): Redroid publishes 5555 on the host and
+# backend + ws-scrcpy reach it through the umbrella-net gateway (172.18.0.1).
+# Redroid's container IP gave "No route to host" for adb, so don't use it.
+# The subnet is pinned so the gateway (and therefore the ws-scrcpy udid
+# "172.18.0.1:5555" used in stream links) is stable.
+
+name: umbrella-os
+
+x-node-image: &node_image
+  NODE_IMAGE: node:20-bookworm-slim
+
+services:
+  redroid:
+    image: ${REDROID_IMAGE:-redroid/redroid:14.0.0_64only-latest}
+    container_name: umbrella-redroid
+    privileged: true
+    restart: unless-stopped
+    command:
+      - androidboot.redroid_width=1080
+      - androidboot.redroid_height=1920
+      - androidboot.redroid_dpi=480
+      - androidboot.use_memfd=1
+      - androidboot.redroid_gpu_mode=guest
+    volumes:
+      - /dev/binderfs:/dev/binderfs
+      - ${REDROID_DATA_DIR:-/home/ubuntu/redroid-data}:/data
+    ports:
+      # Needed so the gateway address works. Keep 5555 CLOSED in the security group.
+      - "${REDROID_ADB_BIND:-0.0.0.0}:5555:5555"
+    networks:
+      umbrella-net:
+        aliases: [redroid]
+
+  scrcpy:
+    build:
+      context: ./ws-scrcpy
+      args:
+        <<: *node_image
+        WS_SCRCPY_REF: ${WS_SCRCPY_REF:-8855ad1184ec7b41f1b28d1b899856f828e09c3e}
+    image: ws-scrcpy:arm64
+    container_name: umbrella-scrcpy
+    restart: unless-stopped
+    depends_on: [redroid]
+    environment:
+      REDROID_HOST: ${ANDROID_GATEWAY:-172.18.0.1}
+      REDROID_PORT: "5555"
+      ADB_HOST: ""
+      ADB_PORT: ""
+    ports:
+      # Original run published 0.0.0.0:8000; bound to loopback here because
+      # Caddy reaches it over umbrella-net. Never open 8000 publicly.
+      - "127.0.0.1:8000:8000"
+    networks:
+      umbrella-net:
+        aliases: [scrcpy, umbrella-scrcpy]
+
+  backend:
+    build:
+      context: ./backend
+      args: *node_image
+    image: cryptoice1/umbrella-os-backend:arm64
+    container_name: umbrella-backend
+    restart: unless-stopped
+    depends_on: [redroid]
+    environment:
+      PORT: "4000"
+      ANDROID_HOST: ${ANDROID_GATEWAY:-172.18.0.1}
+      ANDROID_ADB_PORT: "5555"
+      STREAM_URL: "/scrcpy/#!action=stream&udid=${ANDROID_GATEWAY:-172.18.0.1}:5555&player=mse"
+      PUBLIC_STREAM_URL: "/scrcpy/#!action=stream&udid=${ANDROID_GATEWAY:-172.18.0.1}:5555&player=mse"
+    volumes:
+      - umbrella-uploads:/app/uploads
+    networks:
+      umbrella-net:
+        aliases: [backend]
+
+  frontend:
+    build:
+      context: ./frontend
+      args: *node_image
+    image: cryptoice1/umbrella-os-frontend:arm64
+    container_name: umbrella-frontend
+    restart: unless-stopped
+    depends_on: [backend]
+    networks:
+      umbrella-net:
+        aliases: [frontend]
+
+  caddy:
+    image: caddy:2
+    container_name: umbrella-caddy
+    restart: unless-stopped
+    depends_on: [frontend, backend, scrcpy]
+    environment:
+      UMBRELLA_HOST: ${UMBRELLA_HOST:?set UMBRELLA_HOST in .env (e.g. 203-0-113-10.sslip.io)}
+      ACME_EMAIL: ${ACME_EMAIL:-umbrella-os@sslip.io}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile.arm64:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - umbrella-net
+
+networks:
+  umbrella-net:
+    name: umbrella-net
+    ipam:
+      config:
+        - subnet: ${UMBRELLA_NET_SUBNET:-172.18.0.0/16}
+          gateway: ${ANDROID_GATEWAY:-172.18.0.1}
+
+volumes:
+  umbrella-uploads:
+    name: umbrella-uploads
+  caddy-data:
+    name: caddy-data
+  caddy-config:
+    name: caddy-config

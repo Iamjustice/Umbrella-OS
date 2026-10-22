@@ -1,0 +1,77 @@
+# Caddyfile for the Graviton / Redroid + ws-scrcpy stack (docker-compose.arm64.yml).
+# The x86 docker-android stack keeps using deploy/Caddyfile.
+#
+# UMBRELLA_HOST: public hostname, e.g. 203-0-113-10.sslip.io (set in .env).
+# ACME_EMAIL:    contact for Let's Encrypt (default kept from the original deploy).
+{
+	email {$ACME_EMAIL:umbrella-os@sslip.io}
+}
+
+http://{$UMBRELLA_HOST} {
+	redir https://{host}{uri} permanent
+}
+
+http://s.{$UMBRELLA_HOST} {
+	redir https://{host}{uri} permanent
+}
+
+# Optional: ws-scrcpy on its own subdomain (older links). Main entry is /scrcpy/.
+https://s.{$UMBRELLA_HOST} {
+	encode gzip
+	reverse_proxy umbrella-scrcpy:8000
+}
+
+https://{$UMBRELLA_HOST} {
+	encode gzip
+
+	handle /api* {
+		reverse_proxy backend:4000
+	}
+
+	handle /ws {
+		reverse_proxy backend:4000
+	}
+
+	# Same-origin ws-scrcpy (avoids Safari cross-origin iframe/WebSocket issues).
+	handle_path /scrcpy/* {
+		reverse_proxy umbrella-scrcpy:8000
+	}
+
+	handle /scrcpy {
+		redir /scrcpy/ permanent
+	}
+
+	# Legacy noVNC / stream links from the x86 stack.
+	handle /novnc* {
+		redir /scrcpy/ permanent
+	}
+
+	handle /stream* {
+		redir /scrcpy/ permanent
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
+
+# Plain-HTTP fallback (direct IP, health checks).
+:80 {
+	encode gzip
+
+	handle /api* {
+		reverse_proxy backend:4000
+	}
+
+	handle /ws {
+		reverse_proxy backend:4000
+	}
+
+	handle_path /scrcpy/* {
+		reverse_proxy umbrella-scrcpy:8000
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
