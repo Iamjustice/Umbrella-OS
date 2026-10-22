@@ -4,7 +4,14 @@ import VirtualRemote from './components/VirtualRemote';
 import SettingsModal from './components/SettingsModal';
 import WidgetRow from './components/WidgetRow';
 import DesktopDock from './components/DesktopDock';
-import { getApiUrl, getWsUrl, getDefaultStreamUrl } from '../lib/runtimeConfig';
+import {
+  getApiUrl,
+  getWsUrl,
+  getDefaultStreamUrl,
+  isScrcpyStreamUrl,
+  resolveStreamUrl,
+  navigateTopLevel,
+} from '../lib/runtimeConfig';
 
 // Android Keycodes mapping for TV Remote & Bluetooth Keyboards
 const KEY_MAP: Record<string, number> = {
@@ -120,6 +127,7 @@ export default function Home() {
   const lastButtonStateRef = useRef<Record<number, boolean>>({});
   const lastAxisStateRef = useRef<Record<string, boolean>>({});
   const streamUrlRef = useRef<string | null>(null);
+  const backendStreamUrlRef = useRef<string | null>(null);
   const uploadsSectionRef = useRef<HTMLDivElement | null>(null);
   const remoteSectionRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -189,23 +197,28 @@ export default function Home() {
   };
 
   const openStream = (url?: string | null) => {
-    // Always prefer same-origin noVNC with resize=scale so remote fills the iframe.
-    const remoteNovnc =
-      typeof window !== 'undefined'
-        ? `${window.location.origin}/novnc/vnc.html?autoconnect=1&resize=scale&reconnect=1&show_dot=0`
-        : '/novnc/vnc.html?autoconnect=1&resize=scale&reconnect=1&show_dot=0';
-    let next = url || getDefaultStreamUrl();
-    if (typeof window !== 'undefined') {
-      const host = window.location.hostname;
-      if (host !== 'localhost' && host !== '127.0.0.1') {
-        // Normalize ANY remote stream to scaled noVNC (critical for fullscreen feel)
-        next = remoteNovnc;
-      } else if (next && next.includes('/novnc') && !next.includes('resize=')) {
-        const join = next.includes('?') ? '&' : '?';
-        next = `${next}${join}autoconnect=1&resize=scale&reconnect=1&show_dot=0`;
-      }
+    // Priority: URL from the API call > backend-advertised streamUrl (/api/status)
+    // > build-time NEXT_PUBLIC_STREAM_URL > ws-scrcpy deep link.
+    const next = resolveStreamUrl(
+      url || backendStreamUrlRef.current || getDefaultStreamUrl()
+    );
+
+    if (typeof window !== 'undefined' && isScrcpyStreamUrl(next)) {
+      // ws-scrcpy does not work reliably inside our iframe (Safari blocks the
+      // cross-origin / nested WebSocket + MSE player), so leave the portal and
+      // open the same-origin /scrcpy/ deep link as a top-level page.
+      navigateTopLevel(next);
+      return;
     }
-    setStreamUrl(next);
+
+    // Non-scrcpy streams (e.g. noVNC on the x86 docker-android stack) keep the
+    // in-page iframe. Add scaling params to noVNC only if the caller did not.
+    let framed = next;
+    if (framed.includes('/novnc') && !framed.includes('resize=')) {
+      const join = framed.includes('?') ? '&' : '?';
+      framed = `${framed}${join}autoconnect=1&resize=scale&reconnect=1&show_dot=0`;
+    }
+    setStreamUrl(framed);
     setIsFullScreen(true);
     setShowRemote(false);
     setStatusDismissed(false);
@@ -248,6 +261,9 @@ export default function Home() {
         if (statusRes.status === 'fulfilled' && statusRes.value.ok && isMounted) {
           const data = await statusRes.value.json();
           setAdbHealthy(data.adbConnected === true && data.bootCompleted !== false);
+          if (typeof data.streamUrl === 'string' && data.streamUrl) {
+            backendStreamUrlRef.current = data.streamUrl;
+          }
         }
       } catch (e) {
         console.error('Failed to fetch installed apps/health', e);
